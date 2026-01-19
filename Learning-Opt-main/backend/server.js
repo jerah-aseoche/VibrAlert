@@ -1,7 +1,12 @@
+import "dotenv/config";
 import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
 import deviceRoutes from "./routes/device.js";
+
+console.log("SMTP_USER:", process.env.SMTP_USER);
+console.log("ALERT_TO_EMAIL:", process.env.ALERT_TO_EMAIL);
+console.log("mailer enabled:", Boolean(process.env.SMTP_PASS));
 
 const app = express();
 app.use(express.json());
