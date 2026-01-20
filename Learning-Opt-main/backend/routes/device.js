@@ -226,10 +226,36 @@ router.post("/mpu-telemetry", async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ───────── HEARTBEAT FROM ESP32 ───────── */
+router.post("/heartbeat", async (req, res) => {
+  const { ip, rssi } = req.body || {};
+
+  await db.query(
+    `UPDATE system_state
+     SET device_online=1,
+         device_last_seen=NOW(),
+         device_ip=COALESCE(?, device_ip),
+         updated_at=NOW()
+     WHERE id=1`,
+    [ip || null]
+  );
+
+  res.json({ ok: true });
+});
+
 /* ───────── SYSTEM STATE ───────── */
 router.get("/state", async (_, res) => {
   const [[row]] = await db.query(
-    "SELECT alarm_status, last_event, last_source FROM system_state WHERE id=1"
+    `SELECT
+       alarm_status,
+       last_event,
+       last_source,
+       device_online,
+       ws_connected,
+       device_last_seen,
+       device_ip
+     FROM system_state
+     WHERE id=1`
   );
   res.json(row);
 });
