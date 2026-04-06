@@ -1,95 +1,213 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 export default function DetectionLogs() {
   const navigate = useNavigate();
-
   const [activeTab, setActiveTab] = useState("sensor");
   const [logs, setLogs] = useState([]);
-  const [visible, setVisible] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    const onVis = () => setVisible(!document.hidden);
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
-  /* ─── FETCH LOGS (TAB-AWARE) ───────────── */
-  const fetchLogs = async () => {
-    if (!visible) return;
-
+  /* ─── FETCH LOGS BASED ON ACTIVE TAB ─── */
+  const fetchLogs = useCallback(async () => {
+    if (!isMountedRef.current) return;
+    
+    setLoading(true);
     try {
-      let url = "/api/device/sensor-logs";
-      if (activeTab === "web") url = "/api/device/web-bypass-logs";
-      if (activeTab === "device") url = "/api/device/device-bypass-logs";
+      let url = "";
+      switch (activeTab) {
+        case "sensor":
+          url = "/api/device/sensor-logs";
+          break;
+        case "web":
+          url = "/api/device/web-bypass-logs";
+          break;
+        case "device":
+          url = "/api/device/device-bypass-logs";
+          break;
+        default:
+          return;
+      }
 
       const res = await axios.get(url);
-      setLogs(res.data);
+      if (isMountedRef.current) {
+        setLogs(res.data || []);
+        setLastRefresh(new Date());
+      }
     } catch (err) {
-      console.error("Failed to fetch logs", err);
+      console.error(`Failed to fetch ${activeTab} logs:`, err);
+      if (isMountedRef.current) {
+        setLogs([]);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [activeTab]);
+
+  /* ─── POLLING WITH CLEANUP ─── */
+  useEffect(() => {
+    fetchLogs(); // Initial fetch
+    
+    const interval = setInterval(() => {
+      if (document.hidden) return; // Don't fetch when tab is hidden
+      fetchLogs();
+    }, 3000);
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, [fetchLogs]);
+
+  /* ─── CLEAR CURRENT TAB LOGS ─── */
+  const clearCurrentLogs = async () => {
+    if (!window.confirm(`Clear all ${activeTab} logs? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      let url = "";
+      switch (activeTab) {
+        case "sensor":
+          url = "/api/device/sensor-logs";
+          break;
+        case "web":
+          url = "/api/device/web-bypass-logs";
+          break;
+        case "device":
+          url = "/api/device/device-bypass-logs";
+          break;
+        default:
+          return;
+      }
+
+      await axios.delete(url);
+      await fetchLogs(); // Refresh after clear
+      
+      // Show temporary success message
+      const successMsg = document.createElement("div");
+      successMsg.textContent = "Logs cleared successfully!";
+      successMsg.className = "fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50";
+      document.body.appendChild(successMsg);
+      setTimeout(() => successMsg.remove(), 3000);
+      
+    } catch (err) {
+      console.error("Clear failed:", err);
+      alert("Failed to clear logs. Please try again.");
     }
   };
 
-  /* ─── POLLING (ONLY ACTIVE TAB) ────────── */
-  useEffect(() => {
-    let mounted = true;
+  /* ─── REFRESH MANUALLY ─── */
+  const refreshLogs = () => {
+    fetchLogs();
+  };
 
-    const poll = async () => {
-      if (!mounted) return;
-      await fetchLogs();
-    };
-
-    poll();
-
-    const interval = setInterval(poll, 3500);
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, [activeTab, visible]); // include visible
-
-  /* ─── AUTO STOP DETECTION (READ-ONLY) ──── */
-  useEffect(() => {
-    if (!logs.length) return;
-
-    const lastLog = logs[0];
-
-    const isAutoStop =
-      lastLog?.action === "AUTO_STOP" ||
-      lastLog?.event === "AUTO_STOP";
-
-    if (isAutoStop) {
-      console.log("[UI] AUTO STOP detected:", lastLog);
-      console.log("[UI] AUTO STOP detected in logs:", lastLog);
-      // Intentionally NOT mutating alarm state here
+  /* ─── RENDER LOG ENTRY ─── */
+  const renderLogEntry = (log) => {
+    const isAutoStop = log.action === "AUTO_STOP" || log.event === "AUTO_STOP";
+    const isSensorTrigger = log.event === "TRIGGERED" || log.source === "sensor";
+    
+    // Get appropriate title
+    let title = "";
+    if (activeTab === "sensor") {
+      title = log.event || "SENSOR EVENT";
+    } else if (activeTab === "web") {
+      title = log.action || "WEB COMMAND";
+    } else {
+      title = log.action || "DEVICE ACTION";
     }
-  }, [logs]);
 
-  /* ─── CLEAR CURRENT TAB ────────────────── */
-  const clearCurrent = async () => {
-    try {
-      let url = "/api/device/sensor-logs";
-      if (activeTab === "web") url = "/api/device/web-bypass-logs";
-      if (activeTab === "device") url = "/api/device/device-bypass-logs";
+    return (
+      <div
+        key={log.id}
+        className={`p-3 rounded-md text-sm border ${
+          isAutoStop
+            ? "border-yellow-400 bg-yellow-500/10"
+            : log.status === "FAIL" || log.status === "FAILED"
+            ? "border-red-400 bg-red-500/10"
+            : "border-white/10 bg-white/5"
+        }`}
+      >
+        <div className="flex justify-between items-start">
+          <p className="font-semibold">
+            {(log.source || "SYSTEM").toUpperCase()} — {title}
+          </p>
+          <span className={`text-xs px-2 py-1 rounded ${
+            log.status === "SUCCESS" || log.status === "ACTIVE" 
+              ? "bg-green-500/20 text-green-300"
+              : log.status === "FAIL" || log.status === "FAILED"
+              ? "bg-red-500/20 text-red-300"
+              : "bg-yellow-500/20 text-yellow-300"
+          }`}>
+            {log.status || "UNKNOWN"}
+          </span>
+        </div>
 
-      await axios.delete(url);
-      setLogs([]);
-    } catch (err) {
-      console.error("Clear failed", err);
-    }
+        {log.details && (
+          <p className="text-xs opacity-70 mt-1">{log.details}</p>
+        )}
+
+        {/* MPU6050 Telemetry for sensor logs */}
+        {activeTab === "sensor" && isSensorTrigger && (
+          <div className="mt-2 text-xs opacity-80 space-y-1">
+            {log.event_mean_rms_g != null && (
+              <p>📊 Mean RMS: {Number(log.event_mean_rms_g).toFixed(6)} g</p>
+            )}
+            {log.event_peak_rms_g != null && (
+              <p>📈 Peak RMS: {Number(log.event_peak_rms_g).toFixed(6)} g</p>
+            )}
+            {log.threshold_g != null && (
+              <p>⚡ Threshold: {Number(log.threshold_g).toFixed(6)} g</p>
+            )}
+            {log.mpu_hits != null && (
+              <p>🎯 MPU Hits: {log.mpu_hits}</p>
+            )}
+            {log.baseline_rms_g != null && (
+              <p>📉 Baseline: {Number(log.baseline_rms_g).toFixed(6)} g</p>
+            )}
+          </div>
+        )}
+
+        {/* Offline indicator */}
+        {log.occurred_offline === 1 && (
+          <p className="text-xs text-yellow-400 mt-1">
+            📡 Occurred while device was offline
+          </p>
+        )}
+
+        <p className="text-xs opacity-50 mt-2">
+          {new Date(log.created_at).toLocaleString()}
+        </p>
+
+        {isAutoStop && (
+          <p className="mt-1 text-xs font-semibold text-yellow-300">
+            ⏱ AUTO STOP ACTIVATED
+          </p>
+        )}
+      </div>
+    );
   };
 
   return (
     <div className="relative min-h-screen text-white">
-      {/* ─── BACKGROUND ───────────────────────── */}
+      {/* Background */}
       <div
         className="absolute inset-0 bg-cover bg-center"
         style={{ backgroundImage: "url('/login-bg.jpg')" }}
       />
       <div className="absolute inset-0 backdrop-blur-md bg-[#0b3c5d]/70" />
 
-      {/* ─── HEADER ───────────────────────────── */}
+      {/* Header */}
       <header className="relative z-10 h-16 flex items-center justify-between px-6 bg-white shadow-md">
         <button
           onClick={() => navigate("/home")}
@@ -101,30 +219,33 @@ export default function DetectionLogs() {
         <img src="/banner.png" alt="Banner" className="h-10" />
 
         <button
-          onClick={() => navigate("/login")}
+          onClick={() => {
+            localStorage.removeItem("token");
+            navigate("/login");
+          }}
           className="bg-red-500 hover:bg-red-600 px-4 py-1.5 rounded-md text-white"
         >
           Logout
         </button>
       </header>
 
-      {/* ─── CONTENT ─────────────────────────── */}
+      {/* Content */}
       <main className="relative z-10 p-6 max-w-6xl mx-auto">
         <section className="bg-white/10 backdrop-blur-xl rounded-2xl shadow-xl p-6">
-          {/* ─── TABS ─────────────────────────── */}
-          <div className="flex gap-3 mb-4">
+          {/* Tabs */}
+          <div className="flex gap-3 mb-4 flex-wrap">
             <Tab
-              label="Sensor"
+              label="📟 Sensor Logs"
               active={activeTab === "sensor"}
               onClick={() => setActiveTab("sensor")}
             />
             <Tab
-              label="Web Control"
+              label="🌐 Web Control Logs"
               active={activeTab === "web"}
               onClick={() => setActiveTab("web")}
             />
             <Tab
-              label="Device Trigger"
+              label="🖲️ Device Logs"
               active={activeTab === "device"}
               onClick={() => setActiveTab("device")}
             />
@@ -132,84 +253,51 @@ export default function DetectionLogs() {
             <div className="flex-1" />
 
             <button
-              onClick={clearCurrent}
+              onClick={refreshLogs}
+              disabled={loading}
+              className="bg-blue-500 hover:bg-blue-600 px-4 py-1.5 rounded-md text-sm disabled:opacity-50"
+            >
+              🔄 Refresh
+            </button>
+
+            <button
+              onClick={clearCurrentLogs}
               className="bg-red-500 hover:bg-red-600 px-4 py-1.5 rounded-md text-sm"
             >
-              Clear Current
+              🗑️ Clear Current
             </button>
           </div>
 
-          {/* ─── LOG LIST ─────────────────────── */}
-          <div className="max-h-[420px] overflow-y-auto space-y-2">
-            {logs.length === 0 && (
-              <p className="text-center opacity-60 text-sm">No logs available</p>
+          {/* Last refresh indicator */}
+          {lastRefresh && (
+            <div className="text-right text-xs opacity-50 mb-2">
+              Last updated: {lastRefresh.toLocaleTimeString()}
+            </div>
+          )}
+
+          {/* Log List */}
+          <div className="max-h-[500px] overflow-y-auto space-y-2">
+            {loading && logs.length === 0 && (
+              <div className="text-center py-8">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                <p className="mt-2">Loading logs...</p>
+              </div>
             )}
 
-            {logs.map((log) => {
-              const isAutoStop =
-                log.action === "AUTO_STOP" ||
-                log.event === "AUTO_STOP";
+            {!loading && logs.length === 0 && (
+              <p className="text-center opacity-60 text-sm py-8">
+                No logs available for {activeTab} events
+              </p>
+            )}
 
-              const hasTelemetry =
-                activeTab === "sensor" &&
-                (log.event_mean_rms_g != null ||
-                  log.event_peak_rms_g != null ||
-                  log.threshold_g != null);
+            {logs.map((log) => renderLogEntry(log))}
+          </div>
 
-              return (
-                <div
-                  key={log.id}
-                  className={`p-3 rounded-md text-sm border ${
-                    isAutoStop
-                      ? "border-yellow-400 bg-yellow-500/10"
-                      : log.status === "FAIL"
-                      ? "border-red-400 bg-red-500/10"
-                      : "border-white/10 bg-white/5"
-                  }`}
-                >
-                  <p className="font-semibold">
-                    {(log.source || "SYSTEM").toUpperCase()} —{" "}
-                    {log.action || log.event} — {log.status}
-                    {activeTab === "sensor" && log.event_peak_rms_g != null && (
-                      <span className="opacity-80 font-normal">
-                        {" "}
-                        (Peak {Number(log.event_peak_rms_g).toFixed(4)} g)
-                      </span>
-                    )}
-                  </p>
-
-                  <p className="text-xs opacity-70">{log.details}</p>
-
-                  {hasTelemetry && (
-                    <p className="text-xs opacity-80 mt-1">
-                      Pendulum + MPU6050 — Mean{" "}
-                      {log.event_mean_rms_g != null
-                        ? Number(log.event_mean_rms_g).toFixed(4)
-                        : "—"}
-                      g, Peak{" "}
-                      {log.event_peak_rms_g != null
-                        ? Number(log.event_peak_rms_g).toFixed(4)
-                        : "—"}
-                      g, Thresh{" "}
-                      {log.threshold_g != null
-                        ? Number(log.threshold_g).toFixed(4)
-                        : "—"}
-                      g
-                    </p>
-                  )}
-
-                  <p className="text-xs opacity-50 mt-1">
-                    {new Date(log.created_at).toLocaleString()}
-                  </p>
-
-                  {isAutoStop && (
-                    <p className="mt-1 text-xs font-semibold text-yellow-300">
-                      ⚠ AUTO STOP ACTIVATED
-                    </p>
-                  )}
-                </div>
-              );
-            })}
+          {/* Footer info */}
+          <div className="mt-4 text-xs opacity-50 text-center">
+            <p>Sensor logs show MPU6050 vibration detection events</p>
+            <p>Web logs show commands sent from this dashboard</p>
+            <p>Device logs show physical button presses on the ESP32</p>
           </div>
         </section>
       </main>
@@ -217,7 +305,7 @@ export default function DetectionLogs() {
   );
 }
 
-/* ─── TAB BUTTON ───────────────────────────── */
+/* Tab Button Component */
 function Tab({ label, active, onClick }) {
   return (
     <button

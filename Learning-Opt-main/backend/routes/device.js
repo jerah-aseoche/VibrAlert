@@ -24,7 +24,7 @@ router.post("/command/:cmd", async (req, res) => {
 
 /* ───────── ACK FROM ESP32 ───────── */
 router.post("/ack", async (req, res) => {
-  const { action, source } = req.body; // { action:"ON", source:"web" }
+  const { action, source } = req.body;
   console.log("🔄 ACK:", action, source);
 
   const [result] = await db.query(
@@ -37,7 +37,7 @@ router.post("/ack", async (req, res) => {
   );
 
   if (result.affectedRows === 0) {
-    console.log("⏭️ No SENT row to ACK (duplicate/late)");
+    console.log("⏭️ No SENT row to ACK");
     return res.json({ ok: true });
   }
 
@@ -72,15 +72,13 @@ router.post("/physical-bypass", async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ───────── SENSOR TRIGGER (WITH TELEMETRY + DEDUPE + OFFLINE NOTE) ───────── */
+/* ───────── SENSOR TRIGGER (MPU6050 ONLY) ───────── */
 router.post("/sensor-detection", async (req, res) => {
   const {
-    event_id,                 // NEW: for dedupe
-    occurred_offline,         // NEW: 0/1 or true/false
+    event_id,
+    occurred_offline,
     status,
     details,
-
-    // telemetry fields (optional)
     baseline_rms_g,
     threshold_g,
     safety_factor,
@@ -88,31 +86,27 @@ router.post("/sensor-detection", async (req, res) => {
     mpu_confirmation_count,
     event_mean_rms_g,
     event_peak_rms_g,
-    mpu_hits,
-    pendulum_hits,
+    mpu_hits
   } = req.body || {};
 
   const offlineFlag = occurred_offline ? 1 : 0;
+  const safeEventId = typeof event_id === "string" && event_id.trim().length
+    ? event_id.trim()
+    : null;
 
-  // Basic guard: if ESP sends nothing, still accept but avoid crash
-  const safeEventId =
-    typeof event_id === "string" && event_id.trim().length
-      ? event_id.trim()
-      : null;
-
-  const baseDetails = details || "Pendulum+MPU verified";
+  const baseDetails = details || "MPU6050 vibration detected";
   const finalDetails = offlineFlag
     ? `${baseDetails} (occurred while offline)`
     : baseDetails;
 
   console.log(
-    "📟 SENSOR TRIGGER",
+    "📟 MPU6050 TRIGGER",
     safeEventId ? `event_id=${safeEventId}` : "(no event_id)",
     offlineFlag ? "[OFFLINE_REPLAY]" : "[LIVE]"
   );
 
   try {
-    // ── DEDUPE: if event_id exists and already stored, do NOTHING (no email)
+    // Deduplication
     if (safeEventId) {
       const [[existing]] = await db.query(
         `SELECT id FROM detection_sensor_logs WHERE event_id=? LIMIT 1`,
@@ -123,26 +117,21 @@ router.post("/sensor-detection", async (req, res) => {
       }
     }
 
-    // 1) Insert detection log (includes event_id + occurred_offline)
+    // Insert detection log
     const [ins] = await db.query(
       `INSERT INTO detection_sensor_logs (source, event, status, details, event_id, occurred_offline)
        VALUES ('sensor', 'TRIGGERED', ?, ?, ?, ?)`,
-      [
-        status || "ACTIVE",
-        finalDetails,
-        safeEventId,
-        offlineFlag,
-      ]
+      [status || "ACTIVE", finalDetails, safeEventId, offlineFlag]
     );
 
     const detectionLogId = ins.insertId;
 
-    // 2) Insert telemetry linked to this log (EVENT mode)
+    // Insert MPU6050 telemetry (no pendulum fields)
     await db.query(
       `INSERT INTO mpu_telemetry_logs
        (mode, detection_log_id, baseline_rms_g, threshold_g, safety_factor, samples,
-        mpu_confirmation_count, event_mean_rms_g, event_peak_rms_g, mpu_hits, pendulum_hits)
-       VALUES ('EVENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        mpu_confirmation_count, event_mean_rms_g, event_peak_rms_g, mpu_hits)
+       VALUES ('EVENT', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         detectionLogId,
         baseline_rms_g ?? null,
@@ -152,29 +141,26 @@ router.post("/sensor-detection", async (req, res) => {
         mpu_confirmation_count ?? null,
         event_mean_rms_g ?? null,
         event_peak_rms_g ?? null,
-        mpu_hits ?? null,
-        pendulum_hits ?? null,
+        mpu_hits ?? null
       ]
     );
 
-    // 3) Update system state (alarm ON because sensor triggered)
+    // Update system state
     await db.query(
       `UPDATE system_state
        SET alarm_status='ON', last_event='SENSOR', last_source='sensor'
        WHERE id=1`
     );
 
-    // 4) Email after DB success
+    // Send email notification
     try {
-      const info = await sendSensorTriggerEmail({
+      await sendSensorTriggerEmail({
         detection_log_id: detectionLogId,
-        received_at: new Date().toISOString(), // email copy can show this as received time
+        received_at: new Date().toISOString(),
         event_id: safeEventId,
         occurred_offline: Boolean(offlineFlag),
-
         status: status || "ACTIVE",
         details: finalDetails,
-
         baseline_rms_g,
         threshold_g,
         safety_factor,
@@ -182,20 +168,17 @@ router.post("/sensor-detection", async (req, res) => {
         mpu_confirmation_count,
         event_mean_rms_g,
         event_peak_rms_g,
-        mpu_hits,
-        pendulum_hits,
+        mpu_hits
       });
-
-      console.log("EMAIL_SENT", info?.messageId || info);
+      console.log("EMAIL_SENT");
     } catch (mailErr) {
-      console.error("EMAIL_FAILED", mailErr?.message || mailErr);
-      // don't fail API because email failed
+      console.error("EMAIL_FAILED", mailErr?.message);
     }
 
     return res.json({ ok: true, detection_log_id: detectionLogId });
   } catch (err) {
-    console.error("SENSOR_DETECTION_FAILED", err?.message || err);
-    return res.status(500).json({ ok: false, error: err?.message || String(err) });
+    console.error("SENSOR_DETECTION_FAILED", err?.message);
+    return res.status(500).json({ ok: false, error: err?.message });
   }
 });
 
@@ -206,21 +189,21 @@ router.post("/auto-stop", async (req, res) => {
 
   if (source === "sensor") {
     await db.query(
-      `INSERT INTO detection_sensor_logs (event,source,status,details)
-       VALUES ('AUTO_STOP','sensor','SUCCESS',?)`,
-      [details]
+      `INSERT INTO detection_sensor_logs (event, source, status, details)
+       VALUES ('AUTO_STOP', 'sensor', 'SUCCESS', ?)`,
+      [details || "Auto-stop triggered"]
     );
   } else if (source === "web") {
     await db.query(
-      `INSERT INTO detection_bypass_logs (action,source,status,details)
-       VALUES ('AUTO_STOP','web','SUCCESS',?)`,
-      [details]
+      `INSERT INTO detection_bypass_logs (action, source, status, details)
+       VALUES ('AUTO_STOP', 'web', 'SUCCESS', ?)`,
+      [details || "Web auto-stop"]
     );
   } else {
     await db.query(
-      `INSERT INTO bypass_logs (action,source,status,details)
-       VALUES ('AUTO_STOP','device','SUCCESS',?)`,
-      [details]
+      `INSERT INTO bypass_logs (action, source, status, details)
+       VALUES ('AUTO_STOP', 'device', 'SUCCESS', ?)`,
+      [details || "Device auto-stop"]
     );
   }
 
@@ -234,7 +217,7 @@ router.post("/auto-stop", async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ───────── MPU TELEMETRY (CALIBRATION) ───────── */
+/* ───────── MPU6050 TELEMETRY (CALIBRATION) ───────── */
 router.post("/mpu-telemetry", async (req, res) => {
   const {
     mode,
@@ -262,7 +245,7 @@ router.post("/mpu-telemetry", async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ───────── HEARTBEAT FROM ESP32 ───────── */
+/* ───────── HEARTBEAT ───────── */
 router.post("/heartbeat", async (req, res) => {
   const { ip } = req.body || {};
 
@@ -296,7 +279,7 @@ router.get("/state", async (_, res) => {
   res.json(row);
 });
 
-/* ───────── FETCH LOGS ───────── */
+/* ───────── FETCH LOGS (MPU6050 ONLY) ───────── */
 router.get("/sensor-logs", async (_, res) => {
   const [rows] = await db.query(
     `SELECT
@@ -305,8 +288,7 @@ router.get("/sensor-logs", async (_, res) => {
        t.event_peak_rms_g,
        t.baseline_rms_g,
        t.threshold_g,
-       t.mpu_hits,
-       t.pendulum_hits
+       t.mpu_hits
      FROM detection_sensor_logs d
      LEFT JOIN mpu_telemetry_logs t
        ON t.detection_log_id = d.id AND t.mode = 'EVENT'

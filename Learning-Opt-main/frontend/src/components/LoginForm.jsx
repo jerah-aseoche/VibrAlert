@@ -7,7 +7,6 @@ import LoadingSpinner from "./LoadingSpinner";
 export default function LoginForm({
   isLoading,
   setIsLoading,
-  onForgotPassword,
   onSignUp,
 }) {
   const [username, setUsername] = useState("");
@@ -50,7 +49,7 @@ export default function LoginForm({
   };
 
   return (
-    <form onSubmit={handleLogin} className="space-y-6 w-full max-w-md">
+    <form onSubmit={handleLogin} className="space-y-6 w-10/12 px-6 max-w-4xl">
       <div>
         <input
           type="text"
@@ -59,7 +58,7 @@ export default function LoginForm({
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           disabled={isLoading}
-          className="w-full p-4 rounded-md bg-zinc-800 text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-violet-500"
+          className="w-full p-8 rounded-md bg-zinc-800 text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-violet-500"
         />
       </div>
 
@@ -72,7 +71,7 @@ export default function LoginForm({
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           disabled={isLoading}
-          className="w-full p-4 pr-20 rounded-md bg-zinc-800 text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-violet-500"
+          className="w-full p-8 pr-20 rounded-md bg-zinc-800 text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-violet-500"
         />
 
         <button
@@ -84,34 +83,10 @@ export default function LoginForm({
         </button>
       </div>
 
-      <div className="flex justify-between text-sm">
-        <a
-          href="#"
-          className="text-white-400 hover:underline"
-          onClick={(e) => {
-            e.preventDefault();
-            onForgotPassword?.();
-          }}
-        >
-          Forgot Password?
-        </a>
-
-        <a
-          href="#"
-          className="text-white-400 hover:underline"
-          onClick={(e) => {
-            e.preventDefault();
-            onSignUp?.();
-          }}
-        >
-          Create Account
-        </a>
-      </div>
-
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full bg-zinc-300 hover:bg-blue-300 transition p-4 rounded-md text-zinc font-semibold"
+        className="w-full bg-zinc-300 hover:bg-blue-300 transition p-6 rounded-md text-zinc font-semibold"
       >
         {isLoading ? "Logging in..." : "Login"}
       </button>
