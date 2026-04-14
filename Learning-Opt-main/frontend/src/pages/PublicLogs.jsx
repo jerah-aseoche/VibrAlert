@@ -1,15 +1,112 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
 
 export default function PublicLogs() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [logs, setLogs] = useState([]);
   const [alarmStatus, setAlarmStatus] = useState("OFF");
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
+  
+  // Offline & Notification States
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState('default');
 
-  // Fetch current alarm status
+  // Check for admin token on page load
+  useEffect(() => {
+    const adminToken = searchParams.get('admin_token');
+    const savedToken = localStorage.getItem('adminQRToken');
+    
+    if (adminToken && adminToken === savedToken) {
+      localStorage.setItem("isAdmin", "true");
+      localStorage.setItem("adminUsername", "qr_admin");
+      localStorage.setItem("adminAccessMethod", "qr");
+      navigate("/home", { replace: true });
+      return;
+    }
+  }, [searchParams, navigate]);
+
+  // Check notification support and permission
+  useEffect(() => {
+    const supported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+    setPushSupported(supported);
+    
+    if (supported) {
+      setNotificationPermission(Notification.permission);
+      setNotificationsEnabled(Notification.permission === 'granted');
+    }
+  }, []);
+
+  // Online/Offline event listeners
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Convert VAPID public key to Uint8Array
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  // Enable push notifications
+  const enableNotifications = async () => {
+    if (!pushSupported) {
+      alert('Push notifications are not supported on this browser.');
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      
+      if (permission === 'granted') {
+        // Get service worker registration
+        const registration = await navigator.serviceWorker.ready;
+        
+        // VAPID Public Key (replace with your actual key from backend)
+        const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
+        
+        // Subscribe to push
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+
+        // Send subscription to backend
+        const response = await axios.post('/api/device/subscribe-push', { subscription });
+        
+        if (response.data.ok) {
+          setNotificationsEnabled(true);
+          alert('🔔 Notifications enabled! You will receive alerts when the alarm triggers.');
+        }
+      } else {
+        alert('Notification permission denied. You can enable it in browser settings.');
+      }
+    } catch (error) {
+      console.error('Push subscription error:', error);
+      alert('Failed to enable notifications. Please try again.');
+    }
+  };
+
   const fetchStatus = async () => {
     try {
       const res = await axios.get("/api/device/state");
@@ -19,7 +116,6 @@ export default function PublicLogs() {
     }
   };
 
-  // Fetch detection logs (read-only)
   const fetchLogs = async () => {
     try {
       const res = await axios.get("/api/device/sensor-logs");
@@ -36,7 +132,6 @@ export default function PublicLogs() {
     fetchStatus();
     fetchLogs();
     
-    // Auto-refresh every 5 seconds
     const interval = setInterval(() => {
       fetchStatus();
       fetchLogs();
@@ -63,6 +158,13 @@ export default function PublicLogs() {
       />
       <div className="absolute inset-0 backdrop-blur-md bg-[#0b3c5d]/70" />
 
+      {/* Offline Indicator Banner */}
+      {!isOnline && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-yellow-500 text-black px-4 py-2 rounded-lg shadow-lg text-sm font-medium">
+          📡 Offline Mode - Showing cached data
+        </div>
+      )}
+
       {/* Header */}
       <header className="relative z-10 h-16 flex items-center justify-between px-6 bg-white shadow-md">
         <div className="flex items-center gap-3">
@@ -70,13 +172,30 @@ export default function PublicLogs() {
           <span className="text-black font-semibold">VibrAlert Monitor</span>
         </div>
         
-        {/* Admin Login Button */}
-        <button
-          onClick={() => navigate("/admin-login")}
-          className="bg-[#185886] hover:bg-[#1f6fa3] px-4 py-2 rounded-md text-white transition flex items-center gap-2"
-        >
-          🔐 Admin Login
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Notification Button */}
+          {pushSupported && !notificationsEnabled && notificationPermission !== 'granted' && (
+            <button
+              onClick={enableNotifications}
+              className="bg-yellow-500 hover:bg-yellow-600 px-3 py-2 rounded-md text-white text-sm transition flex items-center gap-2"
+            >
+              🔔 Enable Notifications
+            </button>
+          )}
+          {notificationsEnabled && (
+            <span className="bg-green-500/20 text-green-400 px-3 py-2 rounded-md text-sm flex items-center gap-2">
+              🔔 Notifications On
+            </span>
+          )}
+          
+          {/* Admin Login Button */}
+          <button
+            onClick={() => navigate("/admin-login")}
+            className="bg-[#185886] hover:bg-[#1f6fa3] px-4 py-2 rounded-md text-white transition flex items-center gap-2"
+          >
+            🔐 Admin Login
+          </button>
+        </div>
       </header>
 
       {/* Main Content */}
@@ -89,6 +208,11 @@ export default function PublicLogs() {
               <p className="text-sm opacity-70 mt-1">
                 Last updated: {lastRefresh ? lastRefresh.toLocaleTimeString() : 'Loading...'}
               </p>
+              {!isOnline && (
+                <p className="text-xs text-yellow-400 mt-1">
+                  ⚠️ You are offline - showing cached data
+                </p>
+              )}
             </div>
             
             <div className={`${alarmDisplay.bg} px-6 py-3 rounded-lg text-center`}>
@@ -147,7 +271,6 @@ export default function PublicLogs() {
                   </span>
                 </div>
 
-                {/* MPU6050 Telemetry */}
                 {log.event_peak_rms_g != null && (
                   <div className="mt-2 text-xs opacity-80">
                     <span className="inline-block mr-3">
@@ -172,7 +295,6 @@ export default function PublicLogs() {
             ))}
           </div>
 
-          {/* Footer Info */}
           <div className="mt-4 text-xs opacity-50 text-center border-t border-white/10 pt-4">
             <p>🔍 This is a read-only monitoring page - No controls available</p>
             <p>📱 Scan QR code for quick access | 🔐 Admin login for full control</p>

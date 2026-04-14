@@ -1,10 +1,16 @@
+import "dotenv/config";
 import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
 import deviceRoutes from "./routes/device.js";
+import connectDB from "./config/database.js";
 
 const app = express();
 
+// Connect to MongoDB (non-blocking - app works even if DB fails)
+connectDB();
+
+// CORS middleware
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');

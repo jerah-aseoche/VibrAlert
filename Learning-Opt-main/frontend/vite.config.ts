@@ -8,7 +8,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://172.18.117.173:3000',  // Use your shared IP
+        target: 'http://192.168.67.120:3000',  // Use your shared IP
         changeOrigin: true,
         secure: false
       }

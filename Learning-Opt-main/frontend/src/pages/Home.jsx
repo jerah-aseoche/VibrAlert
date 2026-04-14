@@ -79,6 +79,13 @@ function HomePage() {
               >
                 🎮 Manual Control
               </button>
+              
+              <button
+              onClick={() => navigate("/qr")}
+              className="flex items-center justify-center min-w-[400px] md:min-w-[500px] min-h-[100px] md:min-h-[120px] px-6 py-8 bg-[#185886] text-white font-semibold text-lg rounded-xl shadow-lg hover:bg-[#1f6fa3] hover:scale-105 transition"
+            >
+              📱 QR Code Generator
+            </button>
             </div>
           </div>
         </section>

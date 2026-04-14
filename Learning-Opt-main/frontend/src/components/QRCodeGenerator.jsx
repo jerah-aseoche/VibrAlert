@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import QRCode from 'react-qr-code';
-import { toast } from 'react-hot-toast';
 
 export default function QRCodeGenerator({ url, title, description }) {
   const [showQR, setShowQR] = useState(false);
 
   const downloadQR = () => {
-    const svg = document.getElementById('qr-code');
+    const svg = document.getElementById(`qr-${title.replace(/\s/g, '')}`);
+    if (!svg) return;
+    
     const svgData = new XMLSerializer().serializeToString(svg);
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -18,48 +19,46 @@ export default function QRCodeGenerator({ url, title, description }) {
       ctx.drawImage(img, 0, 0);
       const pngFile = canvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
-      downloadLink.download = `${title.toLowerCase().replace(/\s/g, '-')}-qr.png`;
+      downloadLink.download = `${title.toLowerCase().replace(/\s/g, '-')}.png`;
       downloadLink.href = pngFile;
       downloadLink.click();
-      toast.success('QR Code downloaded!');
     };
     
-    img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
   };
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-lg">
+    <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition">
       <h3 className="text-xl font-bold mb-2">{title}</h3>
       <p className="text-gray-600 text-sm mb-4">{description}</p>
       
       {!showQR ? (
         <button
           onClick={() => setShowQR(true)}
-          className="bg-[#185886] text-white px-4 py-2 rounded-lg hover:bg-[#1f6fa3] transition"
+          className="bg-[#185886] text-white px-4 py-2 rounded-lg hover:bg-[#1f6fa3] transition w-full"
         >
           Show QR Code
         </button>
       ) : (
         <div className="space-y-4">
-          <div className="flex justify-center p-4 bg-white rounded-lg">
+          <div className="flex justify-center p-4 bg-gray-50 rounded-lg">
             <QRCode
-              id="qr-code"
+              id={`qr-${title.replace(/\s/g, '')}`}
               value={url}
-              size={200}
+              size={180}
               level="H"
-              includeMargin={true}
             />
           </div>
           <div className="flex gap-2">
             <button
               onClick={downloadQR}
-              className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 transition"
+              className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 transition flex-1"
             >
-              Download PNG
+              📥 Download
             </button>
             <button
               onClick={() => setShowQR(false)}
-              className="bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600 transition"
+              className="bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600 transition flex-1"
             >
               Hide
             </button>

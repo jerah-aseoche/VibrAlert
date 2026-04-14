@@ -6,6 +6,7 @@ import Home from "./pages/Home";
 import DetectionLogs from "./pages/DetectionLogs";
 import ManualControl from "./pages/ManualControl";
 import ProtectedRoute from "./components/ProtectedRoute";
+import QRManagement from "./pages/QRManagement";
 
 const App = () => (
   <Router>
@@ -15,6 +16,13 @@ const App = () => (
       
       {/* Admin login page */}
       <Route path="/admin-login" element={<AdminLogin />} />
+      
+      {/* QR Generator (Admin only) */}
+      <Route path="/qr" element={
+        <ProtectedRoute>
+          <QRManagement />
+        </ProtectedRoute>
+      } />
       
       {/* Protected admin routes (require login) */}
       <Route path="/home" element={

@@ -8,6 +8,12 @@ export default function DetectionLogs() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
+  
+  // Offline & Notification States
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
+  
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -16,6 +22,81 @@ export default function DetectionLogs() {
       isMountedRef.current = false;
     };
   }, []);
+
+  // Check notification support and permission
+  useEffect(() => {
+    const supported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+    setPushSupported(supported);
+    
+    if (supported) {
+      setNotificationsEnabled(Notification.permission === 'granted');
+    }
+  }, []);
+
+  // Online/Offline event listeners
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Convert VAPID public key to Uint8Array
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  // Enable push notifications
+  const enableNotifications = async () => {
+    if (!pushSupported) {
+      alert('Push notifications are not supported on this browser.');
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      
+      if (permission === 'granted') {
+        // Get service worker registration
+        const registration = await navigator.serviceWorker.ready;
+        
+        // VAPID Public Key (replace with your actual key from backend)
+        const VAPID_PUBLIC_KEY = 'BDKDZu9HQ_1uyQ6VxwqekpHudhAef_ZpIXFaZMBxGYsz6vyUXkHwhBZvScxwE6dkWUn29kmHuDi2NigiwSTKeVQ';
+        
+        // Subscribe to push
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+
+        // Send subscription to backend
+        const response = await axios.post('/api/device/subscribe-push', { subscription });
+        
+        if (response.data.ok) {
+          setNotificationsEnabled(true);
+          alert('🔔 Notifications enabled! You will receive alerts when the alarm triggers.');
+        }
+      } else {
+        alert('Notification permission denied. You can enable it in browser settings.');
+      }
+    } catch (error) {
+      console.error('Push subscription error:', error);
+      alert('Failed to enable notifications. Please try again.');
+    }
+  };
 
   /* ─── FETCH LOGS BASED ON ACTIVE TAB ─── */
   const fetchLogs = useCallback(async () => {
@@ -207,26 +288,52 @@ export default function DetectionLogs() {
       />
       <div className="absolute inset-0 backdrop-blur-md bg-[#0b3c5d]/70" />
 
+      {/* Offline Indicator Banner */}
+      {!isOnline && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-yellow-500 text-black px-4 py-2 rounded-lg shadow-lg text-sm font-medium">
+          📡 Offline Mode - Showing cached data
+        </div>
+      )}
+
       {/* Header */}
       <header className="relative z-10 h-16 flex items-center justify-between px-6 bg-white shadow-md">
         <button
           onClick={() => navigate("/home")}
           className="text-black font-semibold hover:text-[#6EB1D6]"
         >
-          ← Home
+          ← Dashboard
         </button>
 
         <img src="/banner.png" alt="Banner" className="h-10" />
 
-        <button
-          onClick={() => {
-            localStorage.removeItem("token");
-            navigate("/login");
-          }}
-          className="bg-red-500 hover:bg-red-600 px-4 py-1.5 rounded-md text-white"
-        >
-          Logout
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Notification Button */}
+          {pushSupported && !notificationsEnabled && (
+            <button
+              onClick={enableNotifications}
+              className="bg-yellow-500 hover:bg-yellow-600 px-3 py-1.5 rounded-md text-white text-sm transition flex items-center gap-2"
+            >
+              🔔 Enable Notifications
+            </button>
+          )}
+          {notificationsEnabled && (
+            <span className="bg-green-500/20 text-green-400 px-3 py-1.5 rounded-md text-sm flex items-center gap-2">
+              🔔 Notifications On
+            </span>
+          )}
+          
+          {/* Logout Button */}
+          <button
+            onClick={() => {
+              localStorage.removeItem("isAdmin");
+              localStorage.removeItem("adminUsername");
+              navigate("/");
+            }}
+            className="bg-red-500 hover:bg-red-600 px-4 py-1.5 rounded-md text-white"
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       {/* Content */}
@@ -272,6 +379,7 @@ export default function DetectionLogs() {
           {lastRefresh && (
             <div className="text-right text-xs opacity-50 mb-2">
               Last updated: {lastRefresh.toLocaleTimeString()}
+              {!isOnline && <span className="text-yellow-400 ml-2">(Offline Mode)</span>}
             </div>
           )}
 
@@ -298,6 +406,9 @@ export default function DetectionLogs() {
             <p>Sensor logs show MPU6050 vibration detection events</p>
             <p>Web logs show commands sent from this dashboard</p>
             <p>Device logs show physical button presses on the ESP32</p>
+            {!isOnline && (
+              <p className="text-yellow-400 mt-2">⚠️ You are offline - some data may be cached</p>
+            )}
           </div>
         </section>
       </main>

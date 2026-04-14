@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function AdminLogin() {
@@ -7,6 +7,7 @@ export default function AdminLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   const navigate = useNavigate();
 
@@ -15,6 +16,20 @@ export default function AdminLogin() {
     username: "vibralert_admin",
     password: "VibrAlert2024!"
   };
+
+  // Online/Offline event listeners
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -54,6 +69,13 @@ export default function AdminLogin() {
       />
       <div className="absolute inset-0 backdrop-blur-md bg-[#0b3c5d]/70" />
 
+      {/* Offline Indicator */}
+      {!isOnline && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-yellow-500 text-black px-4 py-2 rounded-lg shadow-lg text-sm font-medium">
+          📡 Offline Mode - Some features may be limited
+        </div>
+      )}
+
       {/* Left Panel */}
       <div className="hidden lg:flex min-h-screen w-2/5 relative items-center justify-center">
         <div className="relative z-10 text-white text-center">
@@ -74,6 +96,11 @@ export default function AdminLogin() {
       <div className="w-full lg:w-3/5 flex items-center justify-center">
         <div className="w-full max-w-md bg-white/10 backdrop-blur-lg rounded-2xl p-8 mx-4">
           <div className="text-center mb-8">
+            {!isOnline && (
+              <div className="mb-4 inline-block px-3 py-1 bg-yellow-500/30 rounded-full text-xs">
+                📡 Offline Mode
+              </div>
+            )}
             <h1 className="text-3xl font-bold text-white">Admin Login</h1>
             <p className="text-white/70 mt-2">Access the control dashboard</p>
           </div>
@@ -127,6 +154,11 @@ export default function AdminLogin() {
             <p className="text-white/50 text-sm">
               Demo credentials: vibralert_admin / VibrAlert2024!
             </p>
+            {!isOnline && (
+              <p className="text-yellow-400/70 text-xs mt-2">
+                ⚠️ You are offline. Login will still work, but real-time updates may be delayed.
+              </p>
+            )}
           </div>
         </div>
       </div>
