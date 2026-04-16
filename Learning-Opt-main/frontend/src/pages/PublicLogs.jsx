@@ -13,30 +13,38 @@ export default function PublicLogs() {
   // Offline & Notification States
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [pushSupported, setPushSupported] = useState(false);
-  const [notificationPermission, setNotificationPermission] = useState('default');
+  const [pushSupported, setPushSupported] = useState(false); // ✅ Fixed: removed "controller"
 
-  // Check for admin token on page load
+  // ✅ CHECK FOR ADMIN TOKEN FIRST - Redirect to Dashboard
   useEffect(() => {
     const adminToken = searchParams.get('admin_token');
     const savedToken = localStorage.getItem('adminQRToken');
     
     if (adminToken && adminToken === savedToken) {
+      // Valid admin token found - auto-login and redirect to dashboard
       localStorage.setItem("isAdmin", "true");
       localStorage.setItem("adminUsername", "qr_admin");
       localStorage.setItem("adminAccessMethod", "qr");
+      
+      // Redirect to dashboard (remove token from URL)
       navigate("/home", { replace: true });
+      return;
+    }
+    
+    // If token is invalid but present, redirect to admin login
+    if (adminToken && adminToken !== savedToken) {
+      alert("Invalid or expired QR code. Please use the admin login page.");
+      navigate("/admin-login", { replace: true });
       return;
     }
   }, [searchParams, navigate]);
 
-  // Check notification support and permission
+  // Check notification support
   useEffect(() => {
     const supported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
     setPushSupported(supported);
     
     if (supported) {
-      setNotificationPermission(Notification.permission);
       setNotificationsEnabled(Notification.permission === 'granted');
     }
   }, []);
@@ -76,22 +84,18 @@ export default function PublicLogs() {
 
     try {
       const permission = await Notification.requestPermission();
-      setNotificationPermission(permission);
       
       if (permission === 'granted') {
-        // Get service worker registration
         const registration = await navigator.serviceWorker.ready;
         
-        // VAPID Public Key (replace with your actual key from backend)
+        // VAPID Public Key - replace with your actual key
         const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
         
-        // Subscribe to push
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
         });
 
-        // Send subscription to backend
         const response = await axios.post('/api/device/subscribe-push', { subscription });
         
         if (response.data.ok) {
@@ -99,11 +103,11 @@ export default function PublicLogs() {
           alert('🔔 Notifications enabled! You will receive alerts when the alarm triggers.');
         }
       } else {
-        alert('Notification permission denied. You can enable it in browser settings.');
+        alert('Notification permission denied.');
       }
     } catch (error) {
       console.error('Push subscription error:', error);
-      alert('Failed to enable notifications. Please try again.');
+      alert('Failed to enable notifications.');
     }
   };
 
@@ -174,7 +178,7 @@ export default function PublicLogs() {
         
         <div className="flex items-center gap-3">
           {/* Notification Button */}
-          {pushSupported && !notificationsEnabled && notificationPermission !== 'granted' && (
+          {pushSupported && !notificationsEnabled && (
             <button
               onClick={enableNotifications}
               className="bg-yellow-500 hover:bg-yellow-600 px-3 py-2 rounded-md text-white text-sm transition flex items-center gap-2"

@@ -39,7 +39,7 @@ export default function QRManagement() {
     admin: {
       title: '🔐 Admin Dashboard (QR Access)',
       description: 'Full control - QR code bypasses login',
-      url: `${baseUrl}/?admin_token=${adminToken}`,
+      url: `${baseUrl}/qr-login?token=${adminToken}`,  // ← Direct to QR handler
       badge: 'Admin QR Key',
       badgeColor: 'bg-red-100 text-red-800',
       icon: '👑'

@@ -1,20 +1,23 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 function HomePage() {
   const navigate = useNavigate();
+  
+  // Check if accessed via QR
+  const isQRAdmin = localStorage.getItem("adminAccessMethod") === "qr";
+  const adminName = localStorage.getItem("adminUsername") || "Admin";
 
   const logout = () => {
     localStorage.removeItem("isAdmin");
     localStorage.removeItem("adminUsername");
+    localStorage.removeItem("adminAccessMethod");
     navigate("/");
   };
 
   const goToMonitor = () => {
     navigate("/");
   };
-
-  const adminName = localStorage.getItem("adminUsername") || "Admin";
 
   return (
     <div className="relative min-h-screen flex flex-col overflow-hidden text-white">
@@ -34,8 +37,14 @@ function HomePage() {
           ← Monitor View
         </button>
         
-        <div className="flex gap-3">
-          <span className="text-white/70 self-center text-sm">Welcome, {adminName}</span>
+        <div className="flex gap-3 items-center">
+          {/* QR Admin Badge */}
+          {isQRAdmin && (
+            <span className="bg-purple-500/20 text-purple-300 px-3 py-1 rounded-full text-xs">
+              🔐 QR Access
+            </span>
+          )}
+          <span className="text-white/70 text-sm">Welcome, {adminName}</span>
           <button
             onClick={logout}
             className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg font-medium transition"

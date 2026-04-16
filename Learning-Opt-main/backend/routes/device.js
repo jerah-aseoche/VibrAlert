@@ -5,10 +5,25 @@ import SystemState from "../models/SystemState.js";
 import DetectionBypassLog from "../models/DetectionBypassLog.js";
 import BypassLog from "../models/BypassLog.js";
 import { sendCommand } from "../server.js";
+import { sendSensorTriggerEmail, sendTestEmail, getEmailStatus } from "../email.js";
 
 const router = express.Router();
 
-// Sensor detection with MongoDB
+// Helper function to send email notification with severity (non-blocking)
+const sendEmailNotification = async (eventData) => {
+  try {
+    const result = await sendSensorTriggerEmail(eventData);
+    if (result.ok) {
+      console.log(`📧 Email sent with severity: ${result.severity?.toUpperCase() || 'UNKNOWN'}`);
+    } else {
+      console.log('⚠️ Email notification skipped:', result.reason || result.error);
+    }
+  } catch (error) {
+    console.error('Failed to send email notification:', error);
+  }
+};
+
+// Sensor detection with MongoDB + Email
 router.post("/sensor-detection", async (req, res) => {
   const {
     event_id,
@@ -80,6 +95,19 @@ router.post("/sensor-detection", async (req, res) => {
     );
 
     console.log(`✅ Detection saved to MongoDB: ${detectionLog._id}`);
+    
+    // Send email notification with severity-based template (non-blocking)
+    sendEmailNotification({
+      event_id: safeEventId || detectionLog._id.toString(),
+      detection_log_id: detectionLog._id,
+      created_at: new Date().toISOString(),
+      event_mean_rms_g: event_mean_rms_g,
+      event_peak_rms_g: event_peak_rms_g,
+      threshold_g: threshold_g,
+      baseline_rms_g: baseline_rms_g,
+      occurred_offline: offlineFlag === 1
+    });
+    
     return res.json({ ok: true, detection_log_id: detectionLog._id });
     
   } catch (err) {
@@ -140,6 +168,16 @@ router.get("/device-bypass-logs", async (req, res) => {
     res.json(logs);
   } catch (err) {
     res.json([]);
+  }
+});
+
+// Email status endpoint
+router.get("/email-status", async (req, res) => {
+  try {
+    const status = await getEmailStatus();
+    res.json(status);
+  } catch (error) {
+    res.json({ error: error.message });
   }
 });
 
@@ -283,6 +321,29 @@ router.post("/mpu-telemetry", async (req, res) => {
   await log.save();
   
   res.json({ ok: true });
+});
+
+// TEST EMAIL ENDPOINT
+router.get("/test-email", async (req, res) => {
+  try {
+    const alertEmail = process.env.ALERT_TO_EMAIL;
+    if (!alertEmail) {
+      return res.status(400).json({ error: "No ALERT_TO_EMAIL configured" });
+    }
+    
+    // Get first email from list for testing
+    const firstEmail = alertEmail.split(',')[0].trim();
+    const success = await sendTestEmail(firstEmail);
+    
+    if (success) {
+      res.json({ ok: true, message: "Test email sent to " + firstEmail });
+    } else {
+      res.status(500).json({ error: "Failed to send test email" });
+    }
+  } catch (error) {
+    console.error("Test email error:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 export default router;

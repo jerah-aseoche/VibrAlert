@@ -7,12 +7,16 @@ import DetectionLogs from "./pages/DetectionLogs";
 import ManualControl from "./pages/ManualControl";
 import ProtectedRoute from "./components/ProtectedRoute";
 import QRManagement from "./pages/QRManagement";
+import QRLogin from "./pages/QRLogin";  // New component
 
 const App = () => (
   <Router>
     <Routes>
-      {/* Default route - Read-only public logs (no login required) */}
+      {/* Default route - Read-only public logs */}
       <Route path="/" element={<PublicLogs />} />
+      
+      {/* QR Login handler - redirects to dashboard with token */}
+      <Route path="/qr-login" element={<QRLogin />} />
       
       {/* Admin login page */}
       <Route path="/admin-login" element={<AdminLogin />} />
@@ -24,7 +28,7 @@ const App = () => (
         </ProtectedRoute>
       } />
       
-      {/* Protected admin routes (require login) */}
+      {/* Protected admin routes */}
       <Route path="/home" element={
         <ProtectedRoute>
           <Home />
@@ -43,7 +47,6 @@ const App = () => (
         </ProtectedRoute>
       } />
       
-      {/* Fallback - redirect to home */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   </Router>
