@@ -70,19 +70,15 @@ export default function DetectionLogs() {
       const permission = await Notification.requestPermission();
       
       if (permission === 'granted') {
-        // Get service worker registration
         const registration = await navigator.serviceWorker.ready;
         
-        // VAPID Public Key (replace with your actual key from backend)
         const VAPID_PUBLIC_KEY = 'BDKDZu9HQ_1uyQ6VxwqekpHudhAef_ZpIXFaZMBxGYsz6vyUXkHwhBZvScxwE6dkWUn29kmHuDi2NigiwSTKeVQ';
         
-        // Subscribe to push
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
         });
 
-        // Send subscription to backend
         const response = await axios.post('/api/device/subscribe-push', { subscription });
         
         if (response.data.ok) {
@@ -121,7 +117,9 @@ export default function DetectionLogs() {
 
       const res = await axios.get(url);
       if (isMountedRef.current) {
-        setLogs(res.data || []);
+        // Ensure logs is always an array
+        const logsData = Array.isArray(res.data) ? res.data : [];
+        setLogs(logsData);
         setLastRefresh(new Date());
       }
     } catch (err) {
@@ -138,10 +136,10 @@ export default function DetectionLogs() {
 
   /* ─── POLLING WITH CLEANUP ─── */
   useEffect(() => {
-    fetchLogs(); // Initial fetch
+    fetchLogs();
     
     const interval = setInterval(() => {
-      if (document.hidden) return; // Don't fetch when tab is hidden
+      if (document.hidden) return;
       fetchLogs();
     }, 3000);
     
@@ -173,9 +171,8 @@ export default function DetectionLogs() {
       }
 
       await axios.delete(url);
-      await fetchLogs(); // Refresh after clear
+      await fetchLogs();
       
-      // Show temporary success message
       const successMsg = document.createElement("div");
       successMsg.textContent = "Logs cleared successfully!";
       successMsg.className = "fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50";
@@ -198,7 +195,6 @@ export default function DetectionLogs() {
     const isAutoStop = log.action === "AUTO_STOP" || log.event === "AUTO_STOP";
     const isSensorTrigger = log.event === "TRIGGERED" || log.source === "sensor";
     
-    // Get appropriate title
     let title = "";
     if (activeTab === "sensor") {
       title = log.event || "SENSOR EVENT";
@@ -238,7 +234,6 @@ export default function DetectionLogs() {
           <p className="text-xs opacity-70 mt-1">{log.details}</p>
         )}
 
-        {/* MPU6050 Telemetry for sensor logs */}
         {activeTab === "sensor" && isSensorTrigger && (
           <div className="mt-2 text-xs opacity-80 space-y-1">
             {log.event_mean_rms_g != null && (
@@ -259,7 +254,6 @@ export default function DetectionLogs() {
           </div>
         )}
 
-        {/* Offline indicator */}
         {log.occurred_offline === 1 && (
           <p className="text-xs text-yellow-400 mt-1">
             📡 Occurred while device was offline
@@ -307,7 +301,6 @@ export default function DetectionLogs() {
         <img src="/banner.png" alt="Banner" className="h-10" />
 
         <div className="flex items-center gap-3">
-          {/* Notification Button */}
           {pushSupported && !notificationsEnabled && (
             <button
               onClick={enableNotifications}
@@ -322,7 +315,6 @@ export default function DetectionLogs() {
             </span>
           )}
           
-          {/* Logout Button */}
           <button
             onClick={() => {
               localStorage.removeItem("isAdmin");
@@ -375,7 +367,6 @@ export default function DetectionLogs() {
             </button>
           </div>
 
-          {/* Last refresh indicator */}
           {lastRefresh && (
             <div className="text-right text-xs opacity-50 mb-2">
               Last updated: {lastRefresh.toLocaleTimeString()}
@@ -398,7 +389,7 @@ export default function DetectionLogs() {
               </p>
             )}
 
-            {logs.map((log) => renderLogEntry(log))}
+            {Array.isArray(logs) && logs.map((log) => renderLogEntry(log))}
           </div>
 
           {/* Footer info */}
