@@ -1,37 +1,61 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 export default function QRManagement() {
   const navigate = useNavigate();
   const [baseUrl, setBaseUrl] = useState('');
   const [adminToken, setAdminToken] = useState('');
   const [activeTab, setActiveTab] = useState('public');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
-    // Generate or retrieve existing token
-    let token = localStorage.getItem('adminQRToken');
-    if (!token) {
-      token = generateToken();
-      localStorage.setItem('adminQRToken', token);
-      console.log("✅ Generated new admin token:", token);
-    } else {
-      console.log("✅ Using existing admin token:", token);
-    }
-    setAdminToken(token);
+    fetchOrCreateToken();
   }, []);
+
+  const fetchOrCreateToken = async () => {
+    try {
+      setLoading(true);
+      // Try to get existing token from backend
+      const response = await axios.get('/api/device/admin-token');
+      if (response.data.token) {
+        setAdminToken(response.data.token);
+        console.log("✅ Loaded existing token from backend:", response.data.token);
+      } else {
+        // Generate new token and save to backend
+        const newToken = generateToken();
+        await axios.post('/api/device/admin-token', { token: newToken });
+        setAdminToken(newToken);
+        console.log("✅ Generated new token and saved to backend:", newToken);
+      }
+    } catch (error) {
+      console.error("Failed to fetch token:", error);
+      // Fallback to localStorage
+      const fallbackToken = localStorage.getItem('adminQRToken') || generateToken();
+      setAdminToken(fallbackToken);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const generateToken = () => {
     return 'qr_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
   };
 
-  const regenerateToken = () => {
+  const regenerateToken = async () => {
     const newToken = generateToken();
     setAdminToken(newToken);
-    localStorage.setItem('adminQRToken', newToken);
-    alert('New admin QR code generated! Old QR codes will no longer work.');
-    console.log("🔄 Regenerated token:", newToken);
+    try {
+      await axios.post('/api/device/admin-token', { token: newToken });
+      console.log("🔄 Regenerated token:", newToken);
+      alert('New admin QR code generated! Old QR codes will no longer work.');
+    } catch (error) {
+      console.error("Failed to save new token:", error);
+      localStorage.setItem('adminQRToken', newToken);
+      alert('New admin QR code generated! Old QR codes will no longer work.');
+    }
   };
 
   const qrConfigs = {
@@ -77,6 +101,17 @@ export default function QRManagement() {
   };
 
   const current = qrConfigs[activeTab];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Loading QR codes...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100">
