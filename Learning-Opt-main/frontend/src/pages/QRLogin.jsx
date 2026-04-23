@@ -17,7 +17,7 @@ export default function QRLogin() {
       navigate("/home", { replace: true });
     } else if (token) {
       // Invalid token
-      alert("Invalid QR code. Please use the admin login page.");
+      alert("Invalid or expired QR code. Please use the admin login page.");
       navigate("/admin-login", { replace: true });
     } else {
       // No token - redirect to public page
