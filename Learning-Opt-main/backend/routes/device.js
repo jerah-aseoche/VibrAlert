@@ -9,6 +9,10 @@ import { sendSensorTriggerEmail, sendTestEmail, getEmailStatus } from "../email.
 
 const router = express.Router();
 
+// Store admin token in memory (for demo purposes)
+// In production, this should be stored in MongoDB
+let adminToken = null;
+
 // Helper function to send email notification with severity (non-blocking)
 const sendEmailNotification = async (eventData) => {
   try {
@@ -22,6 +26,64 @@ const sendEmailNotification = async (eventData) => {
     console.error('Failed to send email notification:', error);
   }
 };
+
+// Generate a random token
+function generateToken() {
+  return 'qr_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
+}
+
+// Get current admin token
+router.get("/admin-token", async (req, res) => {
+  try {
+    // If no token exists, create one
+    if (!adminToken) {
+      adminToken = generateToken();
+      console.log("📱 Generated new admin token:", adminToken);
+    }
+    res.json({ token: adminToken });
+  } catch (error) {
+    console.error("Failed to get admin token:", error);
+    res.status(500).json({ error: "Failed to get admin token" });
+  }
+});
+
+// Set/update admin token
+router.post("/admin-token", async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (token) {
+      adminToken = token;
+      console.log("📱 Admin token updated:", adminToken);
+      res.json({ ok: true, token: adminToken });
+    } else {
+      res.status(400).json({ error: "No token provided" });
+    }
+  } catch (error) {
+    console.error("Failed to set admin token:", error);
+    res.status(500).json({ error: "Failed to set admin token" });
+  }
+});
+
+// Validate admin token for QR login
+router.post("/validate-admin-token", async (req, res) => {
+  try {
+    const { token } = req.body;
+    
+    console.log("🔍 Validating token - Received:", token);
+    console.log("🔍 Validating token - Stored:", adminToken);
+    
+    if (token && adminToken && token === adminToken) {
+      console.log("✅ Token validation successful");
+      res.json({ valid: true });
+    } else {
+      console.log("❌ Token validation failed");
+      res.json({ valid: false });
+    }
+  } catch (error) {
+    console.error("Token validation error:", error);
+    res.status(500).json({ error: "Failed to validate token" });
+  }
+});
 
 // Sensor detection with MongoDB + Email
 router.post("/sensor-detection", async (req, res) => {
@@ -141,8 +203,11 @@ router.get("/sensor-logs", async (req, res) => {
     const logs = await DetectionSensorLog.find()
       .sort({ created_at: -1 })
       .limit(100);
-    res.json(logs);
+    // Ensure we return an array
+    const logsData = Array.isArray(logs) ? logs : [];
+    res.json(logsData);
   } catch (err) {
+    console.error("Failed to fetch sensor logs:", err);
     res.json([]);
   }
 });
@@ -153,8 +218,10 @@ router.get("/web-bypass-logs", async (req, res) => {
     const logs = await DetectionBypassLog.find()
       .sort({ created_at: -1 })
       .limit(100);
-    res.json(logs);
+    const logsData = Array.isArray(logs) ? logs : [];
+    res.json(logsData);
   } catch (err) {
+    console.error("Failed to fetch web bypass logs:", err);
     res.json([]);
   }
 });
@@ -165,8 +232,10 @@ router.get("/device-bypass-logs", async (req, res) => {
     const logs = await BypassLog.find()
       .sort({ created_at: -1 })
       .limit(100);
-    res.json(logs);
+    const logsData = Array.isArray(logs) ? logs : [];
+    res.json(logsData);
   } catch (err) {
+    console.error("Failed to fetch device bypass logs:", err);
     res.json([]);
   }
 });
