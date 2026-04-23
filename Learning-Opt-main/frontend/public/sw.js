@@ -1,6 +1,6 @@
-const CACHE_NAME = 'vibralert-v2';
-const STATIC_CACHE = 'vibralert-static-v2';
-const API_CACHE = 'vibralert-api-v2';
+const CACHE_NAME = 'vibralert-v3';
+const STATIC_CACHE = 'vibralert-static-v3';
+const API_CACHE = 'vibralert-api-v3';
 
 const STATIC_FILES = [
   '/',
@@ -11,6 +11,7 @@ const STATIC_FILES = [
   '/login-bg.jpg'
 ];
 
+// Install event
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then(cache => cache.addAll(STATIC_FILES))
@@ -18,6 +19,7 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
+// Activate event
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
@@ -32,9 +34,16 @@ self.addEventListener('activate', event => {
   );
 });
 
+// Fetch event - with chrome-extension filter
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   
+  // Skip chrome-extension requests
+  if (url.protocol === 'chrome-extension:') {
+    return;
+  }
+  
+  // API requests - network first, fallback to cache
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(event.request.clone()).then(response => {
@@ -52,6 +61,7 @@ self.addEventListener('fetch', event => {
     return;
   }
   
+  // Static assets - cache first, then network
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {
       if (cachedResponse) {
@@ -70,6 +80,7 @@ self.addEventListener('fetch', event => {
   );
 });
 
+// Push notification handler
 self.addEventListener('push', event => {
   const data = event.data?.json() || { title: 'VibrAlert', body: 'Alarm triggered!' };
   
@@ -84,6 +95,7 @@ self.addEventListener('push', event => {
   );
 });
 
+// Notification click handler
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil(clients.openWindow(event.notification.data.url));
