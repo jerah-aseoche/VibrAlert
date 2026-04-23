@@ -10,14 +10,20 @@ export default function QRManagement() {
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
-    // Generate a random token for admin QR access
-    const token = localStorage.getItem('adminQRToken') || generateToken();
+    // Generate or retrieve existing token
+    let token = localStorage.getItem('adminQRToken');
+    if (!token) {
+      token = generateToken();
+      localStorage.setItem('adminQRToken', token);
+      console.log("✅ Generated new admin token:", token);
+    } else {
+      console.log("✅ Using existing admin token:", token);
+    }
     setAdminToken(token);
-    localStorage.setItem('adminQRToken', token);
   }, []);
 
   const generateToken = () => {
-    return 'qr_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 8);
+    return 'qr_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
   };
 
   const regenerateToken = () => {
@@ -25,6 +31,7 @@ export default function QRManagement() {
     setAdminToken(newToken);
     localStorage.setItem('adminQRToken', newToken);
     alert('New admin QR code generated! Old QR codes will no longer work.');
+    console.log("🔄 Regenerated token:", newToken);
   };
 
   const qrConfigs = {
@@ -39,7 +46,7 @@ export default function QRManagement() {
     admin: {
       title: '🔐 Admin Dashboard (QR Access)',
       description: 'Full control - QR code bypasses login',
-      url: `${baseUrl}/qr-login?token=${adminToken}`,  // ← Direct to QR handler
+      url: `${baseUrl}/qr-login?token=${adminToken}`,
       badge: 'Admin QR Key',
       badgeColor: 'bg-red-100 text-red-800',
       icon: '👑'
@@ -86,7 +93,6 @@ export default function QRManagement() {
       </header>
 
       <main className="max-w-4xl mx-auto p-6">
-        {/* Info Banner */}
         <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded">
           <p className="text-blue-700 text-sm">
             📌 <strong>Print these QR codes</strong> and place them near the ESP32 device.
@@ -95,7 +101,6 @@ export default function QRManagement() {
           </p>
         </div>
 
-        {/* Tab Selector */}
         <div className="flex gap-4 mb-8 justify-center">
           <button
             onClick={() => setActiveTab('public')}
@@ -119,7 +124,6 @@ export default function QRManagement() {
           </button>
         </div>
 
-        {/* QR Code Display */}
         <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
           <div className={`inline-block px-3 py-1 rounded-full text-xs font-semibold mb-4 ${current.badgeColor}`}>
             {current.badge}
@@ -128,7 +132,6 @@ export default function QRManagement() {
           <h2 className="text-2xl font-bold mb-2">{current.title}</h2>
           <p className="text-gray-600 mb-6">{current.description}</p>
           
-          {/* QR Code */}
           <div className="flex justify-center mb-6">
             <div className="p-4 bg-white rounded-xl shadow-lg border-2 border-gray-100">
               <QRCode
@@ -140,12 +143,10 @@ export default function QRManagement() {
             </div>
           </div>
           
-          {/* URL Display */}
           <div className="bg-gray-50 rounded-lg p-3 mb-4">
             <p className="text-sm text-gray-500 break-all font-mono">{current.url}</p>
           </div>
           
-          {/* Action Buttons */}
           <div className="flex gap-4 justify-center">
             <button
               onClick={downloadQR}
@@ -161,7 +162,6 @@ export default function QRManagement() {
             </button>
           </div>
 
-          {/* Regenerate Token Button (Admin only) */}
           {activeTab === 'admin' && (
             <div className="mt-6 pt-4 border-t">
               <button
@@ -177,9 +177,7 @@ export default function QRManagement() {
           )}
         </div>
 
-        {/* Access Instructions */}
         <div className="mt-8 grid md:grid-cols-2 gap-6">
-          {/* Public Access Card */}
           <div className="bg-green-50 rounded-xl p-6 border border-green-200">
             <div className="flex items-center gap-3 mb-3">
               <span className="text-2xl">📱</span>
@@ -196,7 +194,6 @@ export default function QRManagement() {
             </div>
           </div>
 
-          {/* Admin Access Card */}
           <div className="bg-red-50 rounded-xl p-6 border border-red-200">
             <div className="flex items-center gap-3 mb-3">
               <span className="text-2xl">🔐</span>
@@ -219,7 +216,6 @@ export default function QRManagement() {
           </div>
         </div>
 
-        {/* Installation Instructions */}
         <div className="mt-8 bg-white rounded-xl p-6 shadow">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <span>📋</span> How to Install on Phone

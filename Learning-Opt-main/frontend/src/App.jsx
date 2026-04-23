@@ -6,7 +6,7 @@ import Home from "./pages/Home";
 import DetectionLogs from "./pages/DetectionLogs";
 import ManualControl from "./pages/ManualControl";
 import QRManagement from "./pages/QRManagement";
-import QRLogin from "./pages/QRLogin";  // ← MUST HAVE THIS IMPORT
+import QRLogin from "./pages/QRLogin";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
@@ -15,11 +15,27 @@ function App() {
       <Routes>
         <Route path="/" element={<PublicLogs />} />
         <Route path="/admin-login" element={<AdminLogin />} />
-        <Route path="/qr-login" element={<QRLogin />} />  {/* ← MUST HAVE THIS ROUTE */}
-        <Route path="/qr" element={<ProtectedRoute><QRManagement /></ProtectedRoute>} />
-        <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
-        <Route path="/detect" element={<ProtectedRoute><DetectionLogs /></ProtectedRoute>} />
-        <Route path="/control" element={<ProtectedRoute><ManualControl /></ProtectedRoute>} />
+        <Route path="/qr-login" element={<QRLogin />} />
+        <Route path="/qr" element={
+          <ProtectedRoute>
+            <QRManagement />
+          </ProtectedRoute>
+        } />
+        <Route path="/home" element={
+          <ProtectedRoute>
+            <Home />
+          </ProtectedRoute>
+        } />
+        <Route path="/detect" element={
+          <ProtectedRoute>
+            <DetectionLogs />
+          </ProtectedRoute>
+        } />
+        <Route path="/control" element={
+          <ProtectedRoute>
+            <ManualControl />
+          </ProtectedRoute>
+        } />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
