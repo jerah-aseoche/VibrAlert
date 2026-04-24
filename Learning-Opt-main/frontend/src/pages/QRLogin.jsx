@@ -14,11 +14,7 @@ export default function QRLogin() {
       const token = searchParams.get('token');
       
       console.log("========== QR LOGIN DEBUG ==========");
-      console.log("1. Token from URL:", token);
-      console.log("2. Token length:", token?.length);
-      console.log("3. Full URL:", window.location.href);
-      
-      setDebugInfo({ urlToken: token, fullUrl: window.location.href });
+      console.log("Token from URL:", token);
       
       if (!token) {
         console.log("❌ No token found in URL");
@@ -28,13 +24,13 @@ export default function QRLogin() {
       }
 
       try {
-        console.log("4. Sending validation request to backend...");
+        console.log("Sending validation request to backend...");
         const response = await axios.post('/api/device/validate-admin-token', { token });
         
-        console.log("5. Backend response:", response.data);
-        setDebugInfo(prev => ({ ...prev, response: response.data }));
+        console.log("Validation response:", response.data);
+        setDebugInfo({ urlToken: token, response: response.data });
         
-        if (response.data.valid) {
+        if (response.data.valid === true) {
           console.log("✅ Token valid! Redirecting to dashboard...");
           localStorage.setItem("isAdmin", "true");
           localStorage.setItem("adminUsername", "qr_admin");
@@ -44,13 +40,13 @@ export default function QRLogin() {
           console.log("❌ Token invalid according to backend");
           setError("Invalid or expired QR code");
           
-          // Additional debug: try to get the stored token from backend
+          // Get the current backend token for debugging
           try {
-            const tokenResponse = await axios.get('/api/device/admin-token');
-            console.log("6. Stored backend token:", tokenResponse.data);
-            setDebugInfo(prev => ({ ...prev, storedToken: tokenResponse.data.token }));
+            const tokenCheck = await axios.get('/api/device/admin-token');
+            console.log("Current backend token:", tokenCheck.data.token);
+            setDebugInfo(prev => ({ ...prev, backendToken: tokenCheck.data.token }));
           } catch (e) {
-            console.log("6. Failed to get stored token:", e);
+            console.log("Could not fetch backend token");
           }
           
           setTimeout(() => navigate("/admin-login"), 3000);
@@ -73,7 +69,6 @@ export default function QRLogin() {
         {isValidating ? (
           <>
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-            <p>Validating access...</p>
           </>
         ) : error ? (
           <>
@@ -83,9 +78,9 @@ export default function QRLogin() {
             {debugInfo.urlToken && (
               <details className="mt-4 text-left text-xs opacity-50">
                 <summary>Debug Info</summary>
-                <p>URL Token: {debugInfo.urlToken?.substring(0, 20)}...</p>
-                <p>Stored Token: {debugInfo.storedToken?.substring(0, 20)}...</p>
-                <p>Full URL: {debugInfo.fullUrl}</p>
+                <p>URL Token: {debugInfo.urlToken}</p>
+                <p>Backend Token: {debugInfo.backendToken || "Unknown"}</p>
+                <p>Match: {debugInfo.urlToken === debugInfo.backendToken ? "Yes" : "No"}</p>
               </details>
             )}
           </>
