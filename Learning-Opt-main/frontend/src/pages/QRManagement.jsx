@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import QRCode from 'react-qr-code';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -10,46 +10,82 @@ export default function QRManagement() {
   const [activeTab, setActiveTab] = useState('public');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
-    fetchTokenFromBackend();
   }, []);
 
-  // ALWAYS fetch token from backend - never generate locally
-  const fetchTokenFromBackend = async () => {
+  // Force sync with backend - called on page load and when tab becomes visible
+  const syncWithBackend = useCallback(async () => {
+    if (isSyncing) return;
+    
     try {
+      setIsSyncing(true);
       setLoading(true);
       setError(null);
       
-      console.log("Fetching admin token from backend...");
+      console.log("🔄 Syncing with backend...");
+      
+      // ALWAYS fetch the latest token from backend
       const response = await axios.get('/api/device/admin-token');
       
       if (response.data && response.data.token) {
-        setAdminToken(response.data.token);
-        console.log("✅ Loaded token from backend:", response.data.token);
+        const backendToken = response.data.token;
         
-        // Also save to localStorage as backup (but backend is source of truth)
-        localStorage.setItem('adminQRToken', response.data.token);
+        // Check if frontend token matches backend
+        if (adminToken !== backendToken) {
+          console.log(`Token mismatch! Frontend: ${adminToken}, Backend: ${backendToken}`);
+          console.log("✅ Syncing to backend token...");
+          setAdminToken(backendToken);
+          localStorage.setItem('adminQRToken', backendToken);
+        } else {
+          console.log("✅ Token already in sync:", backendToken);
+        }
       } else {
         throw new Error("No token received from backend");
       }
     } catch (error) {
-      console.error("Failed to fetch token from backend:", error);
-      setError("Could not load admin token. Please refresh the page.");
+      console.error("Failed to sync with backend:", error);
+      setError("Could not sync with server. Please refresh the page.");
       
-      // Try to use localStorage as fallback
+      // Fallback to localStorage
       const fallbackToken = localStorage.getItem('adminQRToken');
       if (fallbackToken) {
-        console.log("Using fallback token from localStorage:", fallbackToken);
         setAdminToken(fallbackToken);
-      } else {
-        setAdminToken("ERROR");
       }
     } finally {
       setLoading(false);
+      setIsSyncing(false);
     }
-  };
+  }, [adminToken, isSyncing]);
+
+  // Sync on component mount
+  useEffect(() => {
+    syncWithBackend();
+  }, [syncWithBackend]);
+
+  // Sync when tab becomes visible (user returns to page)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log("Tab became visible - syncing...");
+        syncWithBackend();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [syncWithBackend]);
+
+  // Sync every 30 seconds to ensure token is always up to date
+  useEffect(() => {
+    const interval = setInterval(() => {
+      syncWithBackend();
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [syncWithBackend]);
 
   const generateToken = () => {
     return 'qr_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
@@ -60,16 +96,16 @@ export default function QRManagement() {
       setLoading(true);
       const newToken = generateToken();
       
-      console.log("Regenerating token:", newToken);
+      console.log("🔄 Regenerating new token:", newToken);
       
-      // Save new token to backend
+      // Save new token to backend first
       await axios.post('/api/device/admin-token', { token: newToken });
       
       // Update local state
       setAdminToken(newToken);
       localStorage.setItem('adminQRToken', newToken);
       
-      console.log("✅ Token regenerated successfully:", newToken);
+      console.log("✅ Token regenerated and synced with backend");
       alert('New admin QR code generated! Old QR codes will no longer work.');
     } catch (error) {
       console.error("Failed to regenerate token:", error);
@@ -79,10 +115,9 @@ export default function QRManagement() {
     }
   };
 
-  // Force refresh token from backend (useful if token gets out of sync)
-  const refreshToken = async () => {
-    await fetchTokenFromBackend();
-    alert('Token refreshed from server!');
+  const manualSync = async () => {
+    await syncWithBackend();
+    alert('Token synchronized with server!');
   };
 
   const qrConfigs = {
@@ -129,12 +164,12 @@ export default function QRManagement() {
 
   const current = qrConfigs[activeTab];
 
-  if (loading) {
+  if (loading && !adminToken) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p>Loading QR codes...</p>
+          <p>Syncing with server...</p>
         </div>
       </div>
     );
@@ -145,13 +180,13 @@ export default function QRManagement() {
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center bg-white p-8 rounded-xl shadow-lg max-w-md">
           <div className="text-red-500 text-5xl mb-4">⚠️</div>
-          <h2 className="text-xl font-bold mb-2">Error Loading QR Codes</h2>
+          <h2 className="text-xl font-bold mb-2">Connection Error</h2>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
-            onClick={refreshToken}
+            onClick={manualSync}
             className="bg-[#185886] text-white px-4 py-2 rounded-lg hover:bg-[#1f6fa3]"
           >
-            Retry
+            Retry Sync
           </button>
         </div>
       </div>
@@ -173,11 +208,31 @@ export default function QRManagement() {
       </header>
 
       <main className="max-w-4xl mx-auto p-6">
+        {/* Sync Status Banner */}
+        <div className="mb-4 flex justify-between items-center">
+          <div className="text-xs text-gray-500">
+            {isSyncing ? (
+              <span className="text-yellow-600">🔄 Syncing with server...</span>
+            ) : (
+              <span className="text-green-600">✅ Auto-sync enabled</span>
+            )}
+          </div>
+          <button
+            onClick={manualSync}
+            disabled={isSyncing}
+            className="text-xs bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded transition"
+          >
+            Manual Sync
+          </button>
+        </div>
+
         <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded">
           <p className="text-blue-700 text-sm">
             📌 <strong>Print these QR codes</strong> and place them near the ESP32 device.
             <br />
             The <strong>Admin QR code</strong> grants instant dashboard access without login.
+            <br />
+            <span className="text-xs">🔄 QR codes automatically sync with server every 30 seconds.</span>
           </p>
         </div>
 
@@ -240,28 +295,19 @@ export default function QRManagement() {
             >
               🖨️ Print
             </button>
-            {activeTab === 'admin' && (
-              <button
-                onClick={refreshToken}
-                className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition flex items-center gap-2"
-                title="Sync token with server"
-              >
-                🔄 Sync Token
-              </button>
-            )}
           </div>
 
           {activeTab === 'admin' && (
             <div className="mt-6 pt-4 border-t">
-              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-500 mb-1">Current Admin Token:</p>
-                <p className="text-xs font-mono text-gray-700 break-all">{adminToken}</p>
+              <div className="mb-4 p-3 bg-green-50 rounded-lg border border-green-200">
+                <p className="text-xs text-gray-600 mb-1">Current Admin Token:</p>
+                <p className="text-xs font-mono text-green-700 break-all">{adminToken}</p>
                 <p className="text-xs text-green-600 mt-1">✓ Synchronized with server</p>
               </div>
               
               <button
                 onClick={regenerateToken}
-                disabled={loading}
+                disabled={loading || isSyncing}
                 className="text-red-600 text-sm hover:text-red-800 underline disabled:opacity-50"
               >
                 🔄 Regenerate QR Code (Old QR will stop working)
