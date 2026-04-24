@@ -9,32 +9,43 @@ export default function QRManagement() {
   const [adminToken, setAdminToken] = useState('');
   const [activeTab, setActiveTab] = useState('public');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
-    fetchOrCreateToken();
+    fetchTokenFromBackend();
   }, []);
 
-  const fetchOrCreateToken = async () => {
+  // ALWAYS fetch token from backend - never generate locally
+  const fetchTokenFromBackend = async () => {
     try {
       setLoading(true);
-      // Try to get existing token from backend
+      setError(null);
+      
+      console.log("Fetching admin token from backend...");
       const response = await axios.get('/api/device/admin-token');
-      if (response.data.token) {
+      
+      if (response.data && response.data.token) {
         setAdminToken(response.data.token);
-        console.log("✅ Loaded existing token from backend:", response.data.token);
+        console.log("✅ Loaded token from backend:", response.data.token);
+        
+        // Also save to localStorage as backup (but backend is source of truth)
+        localStorage.setItem('adminQRToken', response.data.token);
       } else {
-        // Generate new token and save to backend
-        const newToken = generateToken();
-        await axios.post('/api/device/admin-token', { token: newToken });
-        setAdminToken(newToken);
-        console.log("✅ Generated new token and saved to backend:", newToken);
+        throw new Error("No token received from backend");
       }
     } catch (error) {
-      console.error("Failed to fetch token:", error);
-      // Fallback to localStorage
-      const fallbackToken = localStorage.getItem('adminQRToken') || generateToken();
-      setAdminToken(fallbackToken);
+      console.error("Failed to fetch token from backend:", error);
+      setError("Could not load admin token. Please refresh the page.");
+      
+      // Try to use localStorage as fallback
+      const fallbackToken = localStorage.getItem('adminQRToken');
+      if (fallbackToken) {
+        console.log("Using fallback token from localStorage:", fallbackToken);
+        setAdminToken(fallbackToken);
+      } else {
+        setAdminToken("ERROR");
+      }
     } finally {
       setLoading(false);
     }
@@ -45,17 +56,33 @@ export default function QRManagement() {
   };
 
   const regenerateToken = async () => {
-    const newToken = generateToken();
-    setAdminToken(newToken);
     try {
+      setLoading(true);
+      const newToken = generateToken();
+      
+      console.log("Regenerating token:", newToken);
+      
+      // Save new token to backend
       await axios.post('/api/device/admin-token', { token: newToken });
-      console.log("🔄 Regenerated token:", newToken);
+      
+      // Update local state
+      setAdminToken(newToken);
+      localStorage.setItem('adminQRToken', newToken);
+      
+      console.log("✅ Token regenerated successfully:", newToken);
       alert('New admin QR code generated! Old QR codes will no longer work.');
     } catch (error) {
-      console.error("Failed to save new token:", error);
-      localStorage.setItem('adminQRToken', newToken);
-      alert('New admin QR code generated! Old QR codes will no longer work.');
+      console.error("Failed to regenerate token:", error);
+      alert('Failed to generate new QR code. Please try again.');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  // Force refresh token from backend (useful if token gets out of sync)
+  const refreshToken = async () => {
+    await fetchTokenFromBackend();
+    alert('Token refreshed from server!');
   };
 
   const qrConfigs = {
@@ -108,6 +135,24 @@ export default function QRManagement() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p>Loading QR codes...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !adminToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center bg-white p-8 rounded-xl shadow-lg max-w-md">
+          <div className="text-red-500 text-5xl mb-4">⚠️</div>
+          <h2 className="text-xl font-bold mb-2">Error Loading QR Codes</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={refreshToken}
+            className="bg-[#185886] text-white px-4 py-2 rounded-lg hover:bg-[#1f6fa3]"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -195,13 +240,29 @@ export default function QRManagement() {
             >
               🖨️ Print
             </button>
+            {activeTab === 'admin' && (
+              <button
+                onClick={refreshToken}
+                className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition flex items-center gap-2"
+                title="Sync token with server"
+              >
+                🔄 Sync Token
+              </button>
+            )}
           </div>
 
           {activeTab === 'admin' && (
             <div className="mt-6 pt-4 border-t">
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500 mb-1">Current Admin Token:</p>
+                <p className="text-xs font-mono text-gray-700 break-all">{adminToken}</p>
+                <p className="text-xs text-green-600 mt-1">✓ Synchronized with server</p>
+              </div>
+              
               <button
                 onClick={regenerateToken}
-                className="text-red-600 text-sm hover:text-red-800 underline"
+                disabled={loading}
+                className="text-red-600 text-sm hover:text-red-800 underline disabled:opacity-50"
               >
                 🔄 Regenerate QR Code (Old QR will stop working)
               </button>
@@ -233,9 +294,6 @@ export default function QRManagement() {
             <div className="flex items-center gap-3 mb-3">
               <span className="text-2xl">🔐</span>
               <h3 className="font-bold text-red-800">Admin QR Access</h3>
-            </div>
-            <div className="mt-2 text-xs text-gray-400 break-all">
-             <strong>Token:</strong> {adminToken}
             </div>
             <p className="text-red-700 text-sm mb-3">
               Scan this QR code to instantly access the admin dashboard.
