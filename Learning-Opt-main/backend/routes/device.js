@@ -64,6 +64,12 @@ router.post("/admin-token", async (req, res) => {
   }
 });
 
+router.post("/validate-admin-token", async (req, res) => {
+  console.log("========== VALIDATE TOKEN ROUTE HIT ==========");
+  console.log("Request body:", req.body);
+  console.log("Current adminToken in memory:", adminToken);
+});
+
 // Validate admin token for QR login
 router.post("/validate-admin-token", async (req, res) => {
   try {

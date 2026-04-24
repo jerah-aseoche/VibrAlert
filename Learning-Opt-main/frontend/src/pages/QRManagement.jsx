@@ -234,6 +234,9 @@ export default function QRManagement() {
               <span className="text-2xl">🔐</span>
               <h3 className="font-bold text-red-800">Admin QR Access</h3>
             </div>
+            <div className="mt-2 text-xs text-gray-400 break-all">
+             <strong>Token:</strong> {adminToken}
+            </div>
             <p className="text-red-700 text-sm mb-3">
               Scan this QR code to instantly access the admin dashboard.
               <strong> No login required via QR!</strong>
