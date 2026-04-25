@@ -1,36 +1,31 @@
-# fly.toml app configuration file generated for vibralert-backend on 2026-04-15T14:14:20+08:00
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
-
-app = 'vibralert-backend'
-primary_region = 'sin'
+app = "vibralert-backend"
 
 [build]
+  [build.args]
+    NODE_ENV = "production"
 
 [env]
-  PORT = '3000'
+  PORT = "3000"
 
 [http_service]
   internal_port = 3000
   force_https = true
-  auto_stop_machines = 'off'
+  auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 1
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 100
+    hard_limit = 200
 
 [[services]]
-  protocol = 'tcp'
+  protocol = "tcp"
   internal_port = 3000
 
   [[services.ports]]
     port = 80
-    handlers = ['http']
-
+    handlers = ["http"]
+  
   [[services.ports]]
     port = 443
-    handlers = ['tls', 'http']
-
-[[vm]]
-  memory = '256mb'
-  cpus = 1
-  memory_mb = 256
+    handlers = ["tls", "http"]
