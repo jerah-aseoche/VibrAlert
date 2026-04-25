@@ -1,8 +1,7 @@
-const CACHE_NAME = 'vibralert-v2';
-const STATIC_CACHE = 'vibralert-static-v2';
-const API_CACHE = 'vibralert-api-v2';
+const CACHE_NAME = 'vibralert-v3';
+const STATIC_CACHE = 'vibralert-static-v3';
+const API_CACHE = 'vibralert-api-v3';
 
-// Files to cache on install
 const STATIC_FILES = [
   '/',
   '/index.html',
@@ -12,7 +11,7 @@ const STATIC_FILES = [
   '/login-bg.jpg'
 ];
 
-// Install - cache static files
+// Install event
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then(cache => cache.addAll(STATIC_FILES))
@@ -20,42 +19,64 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
-// Activate - clean old caches
+// Activate event
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys => Promise.all(
-      keys.filter(key => key !== STATIC_CACHE && key !== API_CACHE)
-        .map(key => caches.delete(key))
-    ))
+    caches.keys().then(cacheNames => {
+      return Promise.all(
+        cacheNames.map(cacheName => {
+          if (cacheName !== STATIC_CACHE && cacheName !== API_CACHE) {
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Fetch - offline-first strategy
+// Fetch event - with chrome-extension filter
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   
-  // API requests - cache then network
+  // Skip chrome-extension requests
+  if (url.protocol === 'chrome-extension:') {
+    return;
+  }
+  
+  // API requests - network first, fallback to cache
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
-      caches.open(API_CACHE).then(cache => 
-        fetch(event.request).then(response => {
-          cache.put(event.request, response.clone());
-          return response;
-        }).catch(() => cache.match(event.request))
-      )
+      fetch(event.request.clone()).then(response => {
+        if (response.status === 200 && event.request.method === 'GET') {
+          const responseToCache = response.clone();
+          caches.open(API_CACHE).then(cache => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        return response;
+      }).catch(() => {
+        return caches.match(event.request);
+      })
     );
     return;
   }
   
-  // Static assets - cache first
+  // Static assets - cache first, then network
   event.respondWith(
-    caches.match(event.request).then(response => 
-      response || fetch(event.request).then(res => {
-        caches.open(STATIC_CACHE).then(cache => cache.put(event.request, res.clone()));
-        return res;
-      })
-    )
+    caches.match(event.request).then(cachedResponse => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+      return fetch(event.request.clone()).then(response => {
+        if (response.status === 200) {
+          const responseToCache = response.clone();
+          caches.open(STATIC_CACHE).then(cache => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        return response;
+      });
+    })
   );
 });
 

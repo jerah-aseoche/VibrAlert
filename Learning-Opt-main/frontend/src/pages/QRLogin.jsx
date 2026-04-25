@@ -20,12 +20,13 @@ export default function QRLogin() {
         console.log("❌ No token found in URL");
         setError("No access token found");
         setTimeout(() => navigate("/"), 2000);
+        setIsValidating(false);
         return;
       }
 
       try {
         console.log("Sending validation request to backend...");
-        const response = await axios.post('/api/device/validate-admin-token', { token });
+        const response = await axios.post('https://vibralert-backend.fly.dev/api/device/validate-admin-token', { token });
         
         console.log("Validation response:", response.data);
         setDebugInfo({ urlToken: token, response: response.data });
@@ -42,19 +43,21 @@ export default function QRLogin() {
           
           // Get the current backend token for debugging
           try {
-            const tokenCheck = await axios.get('/api/device/admin-token');
+            const tokenCheck = await axios.get('https://vibralert-backend.fly.dev/api/device/admin-token');
             console.log("Current backend token:", tokenCheck.data.token);
-            setDebugInfo(prev => ({ ...prev, backendToken: tokenCheck.data.token }));
+            setDebugInfo(prev => ({ ...prev, backendToken: tokenCheck.data.token, match: token === tokenCheck.data.token }));
           } catch (e) {
-            console.log("Could not fetch backend token");
+            console.log("Could not fetch backend token:", e);
+            setDebugInfo(prev => ({ ...prev, backendToken: "Failed to fetch" }));
           }
           
-          setTimeout(() => navigate("/admin-login"), 3000);
+          setTimeout(() => navigate("/admin-login"), 5000);
         }
       } catch (error) {
         console.error("Validation error:", error);
         setError("Failed to validate access");
-        setTimeout(() => navigate("/admin-login"), 3000);
+        setDebugInfo(prev => ({ ...prev, error: error.message }));
+        setTimeout(() => navigate("/admin-login"), 5000);
       } finally {
         setIsValidating(false);
       }
@@ -69,6 +72,7 @@ export default function QRLogin() {
         {isValidating ? (
           <>
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+            <p>Validating access...</p>
           </>
         ) : error ? (
           <>
@@ -76,11 +80,12 @@ export default function QRLogin() {
             <p className="text-lg mb-2">{error}</p>
             <p className="text-sm opacity-70">Redirecting to login page...</p>
             {debugInfo.urlToken && (
-              <details className="mt-4 text-left text-xs opacity-50">
+              <details className="mt-4 text-left text-xs opacity-70">
                 <summary>Debug Info</summary>
-                <p>URL Token: {debugInfo.urlToken}</p>
-                <p>Backend Token: {debugInfo.backendToken || "Unknown"}</p>
-                <p>Match: {debugInfo.urlToken === debugInfo.backendToken ? "Yes" : "No"}</p>
+                <p className="break-all">URL Token: {debugInfo.urlToken}</p>
+                <p className="break-all">Backend Token: {debugInfo.backendToken || "Unknown"}</p>
+                <p>Match: {debugInfo.match === true ? "✅ Yes" : "❌ No"}</p>
+                {debugInfo.error && <p>Error: {debugInfo.error}</p>}
               </details>
             )}
           </>
