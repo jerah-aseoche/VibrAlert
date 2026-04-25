@@ -6,6 +6,10 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "https://vibralert-backend.fly.dev/api/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
