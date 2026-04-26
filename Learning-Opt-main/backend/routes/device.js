@@ -298,6 +298,22 @@ router.post("/physical-bypass", async (req, res) => {
   res.json({ ok: true });
 });
 
+// Update system state directly
+router.post("/state-update", async (req, res) => {
+  const { alarm_status } = req.body;
+  
+  await SystemState.findOneAndUpdate(
+    { id: 1 },
+    { 
+      alarm_status: alarm_status || "OFF",
+      updated_at: new Date()
+    },
+    { upsert: true }
+  );
+  
+  res.json({ ok: true });
+});
+
 // ============ HEARTBEAT ============
 router.post("/heartbeat", async (req, res) => {
   const { ip } = req.body || {};
