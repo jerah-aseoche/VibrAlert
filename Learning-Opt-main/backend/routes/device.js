@@ -32,10 +32,11 @@ function generateToken() {
   return 'qr_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
 }
 
+// ============ ADMIN TOKEN MANAGEMENT ============
+
 // Get current admin token
 router.get("/admin-token", async (req, res) => {
   try {
-    // If no token exists, create one
     if (!adminToken) {
       adminToken = generateToken();
       console.log("📱 Generated new admin token:", adminToken);
@@ -85,7 +86,24 @@ router.post("/validate-admin-token", async (req, res) => {
   }
 });
 
-// Sensor detection with MongoDB + Email
+// ============ WEB BYPASS (Web Control Logs) ============
+router.post("/web-bypass", async (req, res) => {
+  const { action, source, status, details } = req.body;
+  
+  console.log("🌐 Web bypass received:", action, source);
+  
+  const log = new DetectionBypassLog({
+    action: action,
+    source: source || "web",
+    status: status || "SUCCESS",
+    details: details || "Web control"
+  });
+  await log.save();
+  
+  res.json({ ok: true });
+});
+
+// ============ SENSOR DETECTION ============
 router.post("/sensor-detection", async (req, res) => {
   const {
     event_id,
@@ -108,7 +126,6 @@ router.post("/sensor-detection", async (req, res) => {
     : null;
 
   try {
-    // Check for duplicate
     if (safeEventId) {
       const existing = await DetectionSensorLog.findOne({ event_id: safeEventId });
       if (existing) {
@@ -116,7 +133,6 @@ router.post("/sensor-detection", async (req, res) => {
       }
     }
 
-    // Save to MongoDB
     const detectionLog = new DetectionSensorLog({
       source: 'sensor',
       event: 'TRIGGERED',
@@ -125,10 +141,8 @@ router.post("/sensor-detection", async (req, res) => {
       event_id: safeEventId,
       occurred_offline: offlineFlag
     });
-    
     await detectionLog.save();
 
-    // Save telemetry
     const telemetryLog = new MpuTelemetryLog({
       mode: 'EVENT',
       detection_log_id: detectionLog._id,
@@ -141,10 +155,8 @@ router.post("/sensor-detection", async (req, res) => {
       event_peak_rms_g: event_peak_rms_g ?? null,
       mpu_hits: mpu_hits ?? null
     });
-    
     await telemetryLog.save();
 
-    // Update system state
     await SystemState.findOneAndUpdate(
       { id: 1 },
       { 
@@ -158,7 +170,6 @@ router.post("/sensor-detection", async (req, res) => {
 
     console.log(`✅ Detection saved to MongoDB: ${detectionLog._id}`);
     
-    // Send email notification with severity-based template (non-blocking)
     sendEmailNotification({
       event_id: safeEventId || detectionLog._id.toString(),
       detection_log_id: detectionLog._id,
@@ -174,12 +185,11 @@ router.post("/sensor-detection", async (req, res) => {
     
   } catch (err) {
     console.error("SENSOR_DETECTION_FAILED:", err?.message);
-    // Still return success to ESP32 - we'll queue it
     return res.json({ ok: true, queued: true });
   }
 });
 
-// Get system state
+// ============ SYSTEM STATE ============
 router.get("/state", async (req, res) => {
   try {
     let state = await SystemState.findOne({ id: 1 });
@@ -197,50 +207,44 @@ router.get("/state", async (req, res) => {
   }
 });
 
-// Get sensor logs
+// ============ GET LOGS ============
 router.get("/sensor-logs", async (req, res) => {
   try {
     const logs = await DetectionSensorLog.find()
       .sort({ created_at: -1 })
       .limit(100);
-    // Ensure we return an array
-    const logsData = Array.isArray(logs) ? logs : [];
-    res.json(logsData);
+    res.json(Array.isArray(logs) ? logs : []);
   } catch (err) {
     console.error("Failed to fetch sensor logs:", err);
     res.json([]);
   }
 });
 
-// Get web bypass logs
 router.get("/web-bypass-logs", async (req, res) => {
   try {
     const logs = await DetectionBypassLog.find()
       .sort({ created_at: -1 })
       .limit(100);
-    const logsData = Array.isArray(logs) ? logs : [];
-    res.json(logsData);
+    res.json(Array.isArray(logs) ? logs : []);
   } catch (err) {
     console.error("Failed to fetch web bypass logs:", err);
     res.json([]);
   }
 });
 
-// Get device bypass logs
 router.get("/device-bypass-logs", async (req, res) => {
   try {
     const logs = await BypassLog.find()
       .sort({ created_at: -1 })
       .limit(100);
-    const logsData = Array.isArray(logs) ? logs : [];
-    res.json(logsData);
+    res.json(Array.isArray(logs) ? logs : []);
   } catch (err) {
     console.error("Failed to fetch device bypass logs:", err);
     res.json([]);
   }
 });
 
-// Email status endpoint
+// ============ EMAIL STATUS ============
 router.get("/email-status", async (req, res) => {
   try {
     const status = await getEmailStatus();
@@ -250,7 +254,7 @@ router.get("/email-status", async (req, res) => {
   }
 });
 
-// Clear logs
+// ============ CLEAR LOGS ============
 router.delete("/sensor-logs", async (req, res) => {
   await DetectionSensorLog.deleteMany({});
   res.json({ ok: true });
@@ -266,9 +270,11 @@ router.delete("/device-bypass-logs", async (req, res) => {
   res.json({ ok: true });
 });
 
-// Physical bypass
+// ============ PHYSICAL BYPASS (Device Button Logs) ============
 router.post("/physical-bypass", async (req, res) => {
   const { action, source, status, details } = req.body;
+  
+  console.log("🔘 Physical bypass received:", action, source);
   
   const log = new BypassLog({
     action: action,
@@ -292,7 +298,7 @@ router.post("/physical-bypass", async (req, res) => {
   res.json({ ok: true });
 });
 
-// Heartbeat
+// ============ HEARTBEAT ============
 router.post("/heartbeat", async (req, res) => {
   const { ip } = req.body || {};
   
@@ -310,7 +316,7 @@ router.post("/heartbeat", async (req, res) => {
   res.json({ ok: true });
 });
 
-// Web command
+// ============ WEB COMMAND ============
 router.post("/command/:cmd", async (req, res) => {
   const cmd = req.params.cmd.toUpperCase();
   console.log("🌐 WEB CMD →", cmd);
@@ -331,9 +337,11 @@ router.post("/command/:cmd", async (req, res) => {
   res.json({ ok: true });
 });
 
-// Auto stop
+// ============ AUTO STOP ============
 router.post("/auto-stop", async (req, res) => {
   const { source, details } = req.body;
+  
+  console.log("⏱ Auto-stop received from:", source);
   
   if (source === "sensor") {
     const log = new DetectionSensorLog({
@@ -375,7 +383,7 @@ router.post("/auto-stop", async (req, res) => {
   res.json({ ok: true });
 });
 
-// MPU Telemetry (Calibration)
+// ============ MPU TELEMETRY ============
 router.post("/mpu-telemetry", async (req, res) => {
   const { mode, baseline_rms_g, threshold_g, safety_factor, samples, mpu_confirmation_count } = req.body;
   
@@ -389,10 +397,11 @@ router.post("/mpu-telemetry", async (req, res) => {
   });
   await log.save();
   
+  console.log(`📊 MPU telemetry saved: ${mode}`);
   res.json({ ok: true });
 });
 
-// TEST EMAIL ENDPOINT
+// ============ TEST EMAIL ============
 router.get("/test-email", async (req, res) => {
   try {
     const alertEmail = process.env.ALERT_TO_EMAIL;
@@ -400,7 +409,6 @@ router.get("/test-email", async (req, res) => {
       return res.status(400).json({ error: "No ALERT_TO_EMAIL configured" });
     }
     
-    // Get first email from list for testing
     const firstEmail = alertEmail.split(',')[0].trim();
     const success = await sendTestEmail(firstEmail);
     
