@@ -207,6 +207,31 @@ router.get("/state", async (req, res) => {
   }
 });
 
+// ============ UPDATE ALARM STATE (Direct from ESP32) ============
+router.post("/alarm-state", async (req, res) => {
+  const { state, source } = req.body;
+  
+  console.log(`🔔 Alarm state update: ${state} from ${source || 'unknown'}`);
+  
+  try {
+    await SystemState.findOneAndUpdate(
+      { id: 1 },
+      { 
+        alarm_status: state === "ON" ? "ON" : "OFF",
+        last_event: state === "ON" ? (source || "UNKNOWN") : "OFF",
+        last_source: source || "system",
+        updated_at: new Date()
+      },
+      { upsert: true }
+    );
+    
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Failed to update alarm state:", error);
+    res.status(500).json({ error: "Failed to update state" });
+  }
+});
+
 // ============ GET LOGS ============
 router.get("/sensor-logs", async (req, res) => {
   try {
@@ -298,25 +323,11 @@ router.post("/physical-bypass", async (req, res) => {
   res.json({ ok: true });
 });
 
-// Update system state directly
-router.post("/state-update", async (req, res) => {
-  const { alarm_status } = req.body;
-  
-  await SystemState.findOneAndUpdate(
-    { id: 1 },
-    { 
-      alarm_status: alarm_status || "OFF",
-      updated_at: new Date()
-    },
-    { upsert: true }
-  );
-  
-  res.json({ ok: true });
-});
-
 // ============ HEARTBEAT ============
 router.post("/heartbeat", async (req, res) => {
-  const { ip } = req.body || {};
+  const { ip, alarm_active } = req.body || {};
+  
+  console.log(`💓 Heartbeat received - IP: ${ip}, Alarm active: ${alarm_active}`);
   
   await SystemState.findOneAndUpdate(
     { id: 1 },
@@ -324,6 +335,7 @@ router.post("/heartbeat", async (req, res) => {
       device_online: true,
       device_last_seen: new Date(),
       device_ip: ip || null,
+      alarm_status: alarm_active === true ? "ON" : "OFF",
       updated_at: new Date()
     },
     { upsert: true }
@@ -349,6 +361,18 @@ router.post("/command/:cmd", async (req, res) => {
     details: 'Manual web control'
   });
   await log.save();
+  
+  // Also update system state
+  await SystemState.findOneAndUpdate(
+    { id: 1 },
+    {
+      alarm_status: cmd === "ON" ? "ON" : "OFF",
+      last_event: cmd,
+      last_source: "web",
+      updated_at: new Date()
+    },
+    { upsert: true }
+  );
   
   res.json({ ok: true });
 });
