@@ -227,12 +227,15 @@ View Dashboard: ${process.env.FRONTEND_URL || 'https://vibralert-frontend.vercel
   }
 }
 
-// Send email via Resend (Cloud)
-async function sendViaResend(to, subject, text) {
+// Send email via Resend (Cloud) - Supports multiple recipients
+async function sendViaResend(recipients, subject, text) {
   try {
+    // recipients can be a single email string or an array of emails
+    const toArray = Array.isArray(recipients) ? recipients : [recipients];
+    
     const { data, error } = await resend.emails.send({
       from: process.env.FROM_EMAIL || 'onboarding@resend.dev',
-      to: [to],
+      to: toArray,  // Pass array of emails
       subject: subject,
       text: text,
     });
@@ -242,7 +245,7 @@ async function sendViaResend(to, subject, text) {
       return false;
     }
     
-    console.log('✅ Email sent via Resend (Cloud):', data?.id);
+    console.log(`✅ Email sent via Resend (Cloud) to ${toArray.length} recipient(s):`, data?.id);
     return true;
   } catch (error) {
     console.error('Resend exception:', error.message);
@@ -250,19 +253,21 @@ async function sendViaResend(to, subject, text) {
   }
 }
 
-// Send email via SMTP (Local fallback)
-async function sendViaSMTP(to, subject, text) {
+// Send email via SMTP (Local fallback) - Supports multiple recipients
+async function sendViaSMTP(recipients, subject, text) {
   if (!smtpTransporter) return false;
   
   try {
+    const toArray = Array.isArray(recipients) ? recipients : [recipients];
+    
     const info = await smtpTransporter.sendMail({
       from: `${process.env.ALERT_FROM_NAME || "VibrAlert"} <${process.env.SMTP_USER}>`,
-      to: to,
+      to: toArray.join(', '),  // SMTP expects comma-separated string
       subject: subject,
       text: text,
     });
     
-    console.log('✅ Email sent via SMTP (Local):', info.messageId);
+    console.log(`✅ Email sent via SMTP (Local) to ${toArray.length} recipient(s):`, info.messageId);
     return true;
   } catch (error) {
     console.error('SMTP error:', error.message);
@@ -283,12 +288,15 @@ export async function sendSensorTriggerEmail(eventData) {
     occurred_offline
   } = eventData;
 
-  // Get recipient email(s)
+  // Get recipient email(s) - split comma-separated string into array
   const toList = process.env.ALERT_TO_EMAIL?.split(',').map(s => s.trim()).filter(Boolean) || [];
+  
   if (toList.length === 0) {
     console.log('⚠️ No ALERT_TO_EMAIL configured');
     return { ok: false, skipped: true, reason: "no recipients" };
   }
+
+  console.log(`📧 Sending email to ${toList.length} recipients: ${toList.join(', ')}`);
 
   // Check cooldown to avoid spam
   const cooldownSec = Number(process.env.ALERT_COOLDOWN_SEC) || 60;
@@ -308,35 +316,33 @@ export async function sendSensorTriggerEmail(eventData) {
 
   console.log(`📧 Sending ${severity.toUpperCase()} level alert email...`);
 
-  // Try cloud first (Resend)
-  let emailSent = false;
+  // Try cloud first (Resend) - Send to ALL recipients in one API call
+  const resendSuccess = await sendViaResend(toList, subject, text);
+  if (resendSuccess) {
+    console.log(`✅ ${severity.toUpperCase()} alert email sent to ${toList.length} recipients via Resend`);
+    return { ok: true, severity };
+  }
   
-  for (const to of toList) {
-    // Try Resend
-    const resendSuccess = await sendViaResend(to, subject, text);
-    if (resendSuccess) {
-      emailSent = true;
-      continue;
-    }
-    
-    // Fallback to SMTP
-    const smtpSuccess = await sendViaSMTP(to, subject, text);
-    if (smtpSuccess) {
-      emailSent = true;
-    }
+  // Fallback to SMTP - Send to ALL recipients in one SMTP call
+  const smtpSuccess = await sendViaSMTP(toList, subject, text);
+  if (smtpSuccess) {
+    console.log(`✅ ${severity.toUpperCase()} alert email sent to ${toList.length} recipients via SMTP`);
+    return { ok: true, severity };
   }
 
-  if (emailSent) {
-    console.log(`✅ ${severity.toUpperCase()} alert email sent successfully`);
-    return { ok: true, severity };
-  } else {
-    console.error('❌ Failed to send email via both methods');
-    return { ok: false, error: "both methods failed" };
-  }
+  console.error('❌ Failed to send email via both methods');
+  return { ok: false, error: "both methods failed" };
 }
 
-// Test email endpoint
-export async function sendTestEmail(to) {
+// Test email endpoint - sends to all configured recipients
+export async function sendTestEmail() {
+  const toList = process.env.ALERT_TO_EMAIL?.split(',').map(s => s.trim()).filter(Boolean) || [];
+  
+  if (toList.length === 0) {
+    console.log('⚠️ No recipients configured');
+    return false;
+  }
+  
   const testData = {
     event_id: 'TEST-' + Date.now(),
     created_at: new Date().toISOString(),
@@ -350,14 +356,14 @@ export async function sendTestEmail(to) {
   const severity = determineSeverity(1.2, 0.8);
   const { subject, text } = generateEmailContent(severity, testData);
 
-  // Try Resend first
-  const resendSuccess = await sendViaResend(to, subject, text);
+  // Try Resend first (sends to all recipients)
+  const resendSuccess = await sendViaResend(toList, subject, text);
   if (resendSuccess) {
     return true;
   }
   
   // Fallback to SMTP
-  return await sendViaSMTP(to, subject, text);
+  return await sendViaSMTP(toList, subject, text);
 }
 
 // Initialize SMTP on module load
